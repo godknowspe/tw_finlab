@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 from src.data.fetcher import get_stock_data_df
 from src.broker.tw_broker import TaiwanStockCommission
+from src.ui.reporter import print_backtest_report
 
 class BacktestRunner:
     def __init__(self, initial_cash=100000.0):
@@ -49,53 +50,11 @@ class BacktestRunner:
         return results
 
     def print_report(self, results):
-        """印出詳細的回測績效報表 (使用 PrettyTable 優化 UI)"""
-        from prettytable import PrettyTable
-        
-        strat = results[0]
-        
-        # 取得分析結果
-        sharpe = strat.analyzers.sharpe.get_analysis()
-        drawdown = strat.analyzers.drawdown.get_analysis()
-        trades = strat.analyzers.trades.get_analysis()
-        returns = strat.analyzers.returns.get_analysis()
-        
-        # 準備表格
-        table = PrettyTable()
-        table.field_names = ["指標 (Metric)", "數值 (Value)"]
-        table.align["指標 (Metric)"] = "l"
-        table.align["數值 (Value)"] = "r"
-        
-        # 報酬率
-        total_return = returns.get('rtot', 0) * 100
-        table.add_row(["總報酬率 (Total Return)", f"{total_return:.2f}%"])
-        
-        # 夏普值
-        sharpe_ratio = sharpe.get('sharperatio', None)
-        sharpe_str = f"{sharpe_ratio:.4f}" if sharpe_ratio is not None else "N/A"
-        table.add_row(["夏普值 (Sharpe Ratio)", sharpe_str])
-        
-        # 最大回撤
-        max_dd = drawdown.get('max', {}).get('drawdown', 0)
-        table.add_row(["最大回撤 (Max Drawdown)", f"{max_dd:.2f}%"])
-        
-        # 交易統計
-        total_trades = trades.get('total', {}).get('closed', 0)
-        table.add_row(["總交易次數 (Total Trades)", str(total_trades)])
-        
-        if total_trades > 0:
-            won_trades = trades.get('won', {}).get('total', 0)
-            lost_trades = trades.get('lost', {}).get('total', 0)
-            win_rate = (won_trades / total_trades) * 100
-            table.add_row(["勝率 (Win Rate)", f"{win_rate:.2f}% ({won_trades}勝/{lost_trades}敗)"])
-        else:
-            table.add_row(["勝率 (Win Rate)", "N/A (無交易紀錄)"])
-            
-        print("\n" + table.get_string(title=f"📈 回測績效報表 ({strat.__class__.__name__})"))
+        print_backtest_report(results)
 
     def plot_and_save(self, filename="backtest_result.png"):
         """繪製並匯出圖表"""
-        # 注意: cerebro.plot 預設會回傳包含 figure 的 list (例如 [[<Figure size 640x480 with 4 Axes>]])
+        # 注意: cerebro.plot 預設會回傳包含 figure 的 list
         figs = self.cerebro.plot(style='candlestick', barup='red', bardown='green', volume=False)
         if figs and len(figs) > 0 and len(figs[0]) > 0:
             fig = figs[0][0]

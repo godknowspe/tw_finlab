@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+        .panel-bg { background-color: #161b22; }
+        .border-line { border-color: #30363d; }
+        .text-green { color: #3fb950; }
+        .text-red { color: #f85149; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+        
+        .toast-enter-active, .toast-leave-active { transition: opacity 0.5s, transform 0.5s; }
+        .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-20px); }
+        
+        /* 閃爍動畫 (代表報價更新) */
+        .flash-green { animation: flashGreen 0.5s ease-out; }
+        .flash-red { animation: flashRed 0.5s ease-out; }
+        @keyframes flashGreen { 0% { background-color: rgba(63, 185, 80, 0.4); } 100% { background-color: transparent; } }
+        @keyframes flashRed { 0% { background-color: rgba(248, 81, 73, 0.4); } 100% { background-color: transparent; } }
+    </style>
+</head>
+<body class="flex h-screen font-sans text-sm">
+<div id="app" class="flex w-full h-full">
+
+    <!-- 左側邊欄 -->
+    <div class="w-64 panel-bg border-r border-line flex flex-col">
+        <div class="p-4 border-b border-line flex justify-between items-center">
+            <span class="font-bold tracking-wider text-gray-400 text-xs cursor-pointer hover:text-white">WATCHLIST</span>
+            <span class="font-bold tracking-wider text-gray-400 text-xs cursor-pointer hover:text-white">POSITIONS</span>
+        </div>
+        <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line">
+            <span>SYM</span>
+            <span>LAST</span>
+            <span>CHG%</span>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+            <div v-for="item in portfolio.watchlist" :key="item.symbol" 
+                 class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
+                 :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
+                 @click="loadChart(item.symbol)">
+                <div>
+                    <div class="font-bold text-white flex items-center gap-2">
+                        {{ item.symbol }}
+                        <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
+                    </div>
+                    <div class="text-xs text-gray-500">{{ item.name }}</div>
+                </div>
+                <div class="text-right">
+                    <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
+                    <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
+                        {{ item.chg_pct }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 中間：圖表 -->
+    <div class="flex-1 flex flex-col relative">
+        <div class="h-12 border-b border-line flex items-center justify-between px-4">
+            <div class="flex items-center gap-4">
+                <span class="font-bold text-lg text-white">{{ currentSymbol }}</span>
+                <span class="text-gray-400">| 1D</span>
+                <!-- 最新報價顯示列 -->
+                <span v-if="currentQuote" class="font-mono text-lg ml-4 flex items-center gap-2" :class="currentQuote.chg >= 0 ? 'text-green' : 'text-red'">
+                    {{ currentQuote.close.toFixed(2) }} 
+                    <span class="text-sm">({{ currentQuote.chg >= 0 ? '+' : '' }}{{ currentQuote.chgPct }}%)</span>
+                </span>
+            </div>
+            
+            <div class="flex items-center gap-2 text-xs text-gray-400">
+                <span v-if="wsConnected" class="flex items-center gap-1 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500"></span> LIVE</span>
+                <span v-else class="flex items-center gap-1 text-red-400"><span class="w-2 h-2 rounded-full bg-red-500"></span> OFFLINE</span>
+            </div>
+        </div>
+        <div id="tvchart" class="flex-1 w-full h-full relative"></div>
+        
+        <!-- Toast 通知 -->
+        <transition name="toast">
+            <div v-if="toastMessage" class="absolute top-4 right-4 z-50 bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3">
+                <span class="text-xl">{{ toastIcon }}</span>
+                <div>{{ toastMessage }}</div>
+            </div>
+        </transition>
+    </div>
+
+    <!-- 右側邊欄：控制台 -->
+    <div class="w-72 panel-bg border-l border-line flex flex-col">
+        <div class="p-4 border-b border-line flex items-center gap-2">
+            <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
+        </div>
+
+        <div class="p-4 flex-1 overflow-y-auto space-y-6">
+            <!-- 狀態監控 -->
+            <div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[TECHNICAL SYNC]</div>
+                <div class="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300 space-y-1">
+                    <div>Target: {{ portfolio.agent_state?.target }}</div>
+                    <div>Phase: <span :class="portfolio.agent_state?.halted ? 'text-red' : 'text-white'">{{ portfolio.agent_state?.phase }}</span></div>
+                    <div>SMA20: <span class="text-white">Active</span></div>
+                    <div>MACD: <span class="text-green">Bullish Divergence</span></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[ACTIVE STATE]</div>
+                <div class="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300 space-y-1" :class="portfolio.agent_state?.halted ? 'border border-red-800' : 'border border-gray-700'">
+                    <div>exposure: {{ portfolio.agent_state?.exposure }}</div>
+                    <div>risk_budget: 12000</div>
+                    <div>halted: <span :class="portfolio.agent_state?.halted ? 'text-red font-bold' : 'text-green'">{{ portfolio.agent_state?.halted }}</span></div>
+                </div>
+            </div>
+            
+            <!-- 策略參數 -->
+            <div>
+                 <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY SETTINGS]</div>
+                 <div class="space-y-3 text-xs">
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Take Profit (%)</span>
+                         <input type="number" v-model.number="settings.take_profit_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Stop Loss (%)</span>
+                         <input type="number" v-model.number="settings.stop_loss_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                 </div>
+            </div>
+        </div>
+
+        <!-- 動作按鈕 -->
+        <div class="p-4 border-t border-line space-y-3">
+            <button @click="sendAction('execute')" :disabled="portfolio.agent_state?.halted" class="w-full py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 font-bold text-xs rounded border border-gray-600 transition">
+                ⚡️ FORCE EXECUTE
+            </button>
+            
+            <button v-if="!portfolio.agent_state?.halted" @click="sendAction('halt')" class="w-full py-2 bg-red-900/40 hover:bg-red-800/80 text-red-400 font-bold text-xs rounded border border-red-800 transition">
+                ⨂ EMERGENCY HALT
+            </button>
+            <button v-else @click="sendAction('resume')" class="w-full py-2 bg-green-900/40 hover:bg-green-800/80 text-green-400 font-bold text-xs rounded border border-green-800 transition shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                ▶️ RESUME TRADING
+            </button>
+        </div>
+    </div>
+
+</div>
+
+    <script>
+        const { createApp, ref, onMounted, reactive } = Vue;
+
+        createApp({
+            setup() {
+                const portfolio = ref({ watchlist: [] });
+                const settings = reactive({ take_profit_pct: 10, stop_loss_pct: 5 });
+                const currentSymbol = ref('2330');
+                const currentQuote = ref(null);
+                
+                const toastMessage = ref('');
+                const toastIcon = ref('🔔');
+                
+                // WebSocket state
+                const wsConnected = ref(false);
+                let ws = null;
+
+                let chart = null;
+                let candleSeries = null;
+
+                const showToast = (msg, icon = '✅') => {
+                    toastMessage.value = msg;
+                    toastIcon.value = icon;
+                    setTimeout(() => { toastMessage.value = ''; }, 3000);
+                };
+
+                const initChart = () => {
+                    const container = document.getElementById('tvchart');
+                    chart = LightweightCharts.createChart(container, {
+                        width: container.clientWidth,
+                        height: container.clientHeight || 600,
+                        autoSize: true,
+                        layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
+                        grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
+                        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                        rightPriceScale: { borderColor: '#30363d' },
+                        timeScale: { borderColor: '#30363d', timeVisible: true },
+                    });
+
+                    candleSeries = chart.addCandlestickSeries({
+                        upColor: '#f85149', downColor: '#3fb950', 
+                        borderDownColor: '#3fb950', borderUpColor: '#f85149',
+                        wickDownColor: '#3fb950', wickUpColor: '#f85149',
+                    });
+
+                    window.addEventListener('resize', () => {
+                        chart.resize(container.clientWidth, container.clientHeight);
+                    });
+                };
+
+                const connectWebSocket = (symbol) => {
+                    if(ws) {
+                        ws.close();
+                        ws = null;
+                    }
+                    
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${symbol}`;
+                    ws = new WebSocket(wsUrl);
+                    
+                    ws.onopen = () => {
+                        wsConnected.value = true;
+                        showToast(`已連線至 ${symbol} 即時報價`, '🟢');
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if(data.symbol === currentSymbol.value) {
+                            // 更新 K 線圖最新的 Candle
+                            candleSeries.update(data.candle);
+                            
+                            // 尋找 Watchlist 中對應的股票來更新左側面板與上方數值
+                            const watchItem = portfolio.value.watchlist.find(i => i.symbol === data.symbol);
+                            if(watchItem) {
+                                const oldPrice = watchItem.last;
+                                const newPrice = data.candle.close;
+                                
+                                // 計算漲跌幅
+                                const chg = newPrice - watchItem.ref_price;
+                                const chgPct = (chg / watchItem.ref_price * 100).toFixed(2);
+                                const sign = chg >= 0 ? '+' : '';
+                                
+                                watchItem.last = newPrice;
+                                watchItem.chg_pct = `${sign}${chgPct}%`;
+                                
+                                // 觸發閃爍特效 (綠漲紅跌)
+                                if (newPrice > oldPrice) {
+                                    watchItem.flashClass = 'flash-green';
+                                } else if (newPrice < oldPrice) {
+                                    watchItem.flashClass = 'flash-red';
+                                }
+                                setTimeout(() => { watchItem.flashClass = ''; }, 500);
+                                
+                                // 更新上方狀態列
+                                currentQuote.value = {
+                                    close: newPrice,
+                                    chg: chg,
+                                    chgPct: Math.abs(chgPct)
+                                };
+                            }
+                        }
+                    };
+                    
+                    ws.onclose = () => {
+                        wsConnected.value = false;
+                    };
+                };
+
+                const loadChart = async (symbol) => {
+                    currentSymbol.value = symbol;
+                    try {
+                        const res = await fetch(`/api/kbars/${symbol}`);
+                        const data = await res.json();
+                        if(data && data.length > 0) {
+                            candleSeries.setData(data);
+                            chart.timeScale().fitContent();
+                            
+                            // 載入歷史資料後，啟動即時報價 WebSocket
+                            connectWebSocket(symbol);
+                        }
+                    } catch(e) { console.error(e); }
+                };
+
+                const fetchPortfolio = async () => {
+                    try {
+                        const res = await fetch('/api/portfolio');
+                        const data = await res.json();
+                        // 加上 flashClass 給 vue 綁定動畫
+                        data.watchlist.forEach(i => i.flashClass = '');
+                        portfolio.value = data;
+                        if(data.settings) {
+                            settings.take_profit_pct = data.settings.take_profit_pct;
+                            settings.stop_loss_pct = data.settings.stop_loss_pct;
+                        }
+                    } catch(e) { console.error(e); }
+                };
+
+                const saveSettings = async () => {
+                    try {
+                        const res = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(settings)
+                        });
+                        const result = await res.json();
+                        showToast(result.message, '⚙️');
+                    } catch(e) { console.error(e); }
+                };
+
+                const sendAction = async (actionType) => {
+                    try {
+                        const res = await fetch('/api/action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: actionType })
+                        });
+                        const result = await res.json();
+                        let icon = '⚡️';
+                        if(actionType === 'halt') icon = '🚨';
+                        if(actionType === 'resume') icon = '▶️';
+                        showToast(result.message, icon);
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                onMounted(() => {
+                    initChart();
+                    fetchPortfolio().then(() => {
+                        loadChart(currentSymbol.value);
+                    });
+                });
+
+                return {
+                    portfolio, settings, currentSymbol, currentQuote,
+                    loadChart, saveSettings, sendAction,
+                    toastMessage, toastIcon, wsConnected
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

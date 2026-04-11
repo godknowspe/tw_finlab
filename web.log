@@ -1,0 +1,83 @@
+INFO:     Will watch for changes in these directories: ['/Users/godknows/code/tw_finlab']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [69977] using StatReload
+INFO:     Started server process [70012]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:62012 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62012 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62012 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62012 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62013 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62013 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     connection rejected (400 Bad Request)
+INFO:     connection closed
+INFO:     127.0.0.1:62214 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62214 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62214 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62214 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62214 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62214 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62214 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62263 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+INFO:     connection closed
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [70012]
+INFO:     Started server process [72151]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [72151]
+INFO:     Started server process [72237]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [72237]
+INFO:     Started server process [72284]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [72284]
+INFO:     Started server process [72525]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:62387 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62387 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62387 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62387 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62387 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62387 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62387 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62388 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62388 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62388 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62563 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62585 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62585 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62585 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62585 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62585 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62586 - "POST /api/action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62586 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62586 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62586 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62586 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62618 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63231 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63231 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63231 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63234 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
