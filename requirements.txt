@@ -1,0 +1,8 @@
+FinMind>=1.6.0
+backtrader>=1.9.78.123
+pandas>=2.0.0
+pytest>=7.0.0
+requests>=2.25.0
+sqlalchemy>=2.0.0
+tqdm>=4.60.0
+matplotlib>=3.5.0
