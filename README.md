@@ -50,3 +50,26 @@ tw_finlab/
 - 針對 `src/api/` 的資料抓取邏輯撰寫 pytest 測試。
 - 針對 `src/data/` 的資料轉換邏輯撰寫測試，確保餵給 Backtrader 的 K線資料無誤。
 - 進行一次完整的端到端 (End-to-End) 測試：抓取 2330 (台積電) 過去一年的資料，執行均線策略，並驗證結果是否合理。
+
+## 6. 如何執行 (How to Run)
+
+### 1. 安裝相依套件 (Install Dependencies)
+請先確保您已經安裝了 Python 3 (建議 3.9+)，接著在專案根目錄執行以下指令：
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. 執行多策略回測 (Run the Backtest)
+我們已經整合了一支主程式 `main.py`，它會自動抓取台積電 (2330) 過去一年的資料，並依序執行 SMA均線交叉、MACD交叉、RSI超買超賣以及布林通道策略。
+
+```bash
+PYTHONPATH=. python main.py
+```
+
+執行後，終端機會印出各策略的詳細績效報表（包含夏普值、最大回撤等），並且會在專案根目錄自動產生每種策略的回測圖表 (PNG 檔)。
+
+### 3. 執行單元測試 (Run Tests)
+```bash
+PYTHONPATH=. pytest tests/
+```

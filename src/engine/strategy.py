@@ -83,3 +83,38 @@ class BollingerBandsStrategy(bt.Strategy):
         else:
             if self.data.close[0] > self.bband.lines.top[0]: # 突破上軌平倉
                 self.close()
+
+
+class CustomCombinedStrategy(bt.Strategy):
+    """自訂組合策略 (MACD 趨勢 + RSI 濾網 + SMA 停損)"""
+    params = dict(
+        macd1=12,
+        macd2=26,
+        macdsig=9,
+        rsi_period=14,
+        rsi_safe=60,   # RSI 低於這個值才買進 (避免追高)
+        sma_stop=20    # 跌破 20MA 就停損
+    )
+
+    def __init__(self):
+        # 1. 宣告所有需要用到的技術指標
+        self.macd = bt.indicators.MACD(
+            self.data.close,
+            period_me1=self.p.macd1,
+            period_me2=self.p.macd2,
+            period_signal=self.p.macdsig
+        )
+        self.mcross = bt.indicators.CrossOver(self.macd.macd, self.macd.signal)
+        self.rsi = bt.indicators.RSI(self.data.close, period=self.p.rsi_period)
+        self.sma = bt.indicators.SMA(self.data.close, period=self.p.sma_stop)
+
+    def next(self):
+        # 2. 定義買賣條件邏輯
+        if not self.position:
+            # 買進條件：MACD 黃金交叉，且 RSI 沒過熱 (< rsi_safe)
+            if self.mcross > 0 and self.rsi < self.p.rsi_safe:
+                self.buy(size=1000)
+        else:
+            # 賣出條件：MACD 死亡交叉，或是跌破 20 日均線 (強制停損)
+            if self.mcross < 0 or self.data.close[0] < self.sma[0]:
+                self.close()
