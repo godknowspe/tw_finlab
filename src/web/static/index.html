@@ -35,14 +35,18 @@
         <div class="p-4 border-b border-line flex justify-between items-center">
             <span @click="activeTab = 'watchlist'" :class="activeTab === 'watchlist' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">WATCHLIST</span>
             <span @click="activeTab = 'positions'" :class="activeTab === 'positions' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">POSITIONS</span>
+            <span @click="activeTab = 'trades'" :class="activeTab === 'trades' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">TRADES</span>
         </div>
         
         <!-- Watchlist 列表 -->
         <div v-if="activeTab === 'watchlist'" class="flex-1 flex flex-col min-h-0">
-            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
                 <span>SYM</span>
-                <span>LAST</span>
-                <span>CHG%</span>
+                <span class="flex-1 text-center">LAST</span>
+                <div class="flex items-center gap-2">
+                    <span>CHG%</span>
+                    <button @click="showAddModal('watchlist')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
+                </div>
             </div>
             <div class="flex-1 overflow-y-auto">
                 <div v-for="item in portfolio.watchlist" :key="item.symbol" 
@@ -50,9 +54,11 @@
                      :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
                      @click="loadChart(item.symbol)">
                     <div>
-                        <div class="font-bold text-white flex items-center gap-2">
+                        <div class="font-bold text-white flex items-center gap-2 group">
                             {{ item.symbol }}
                             <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
+                            <button @click.stop="editWatchlist(item)" class="hidden group-hover:block ml-1 text-blue-400 hover:text-blue-300">✎</button>
+                            <button @click.stop="delWatchlist(item.symbol)" class="hidden group-hover:block ml-1 text-red-500 hover:text-red-400">×</button>
                         </div>
                         <div class="text-xs text-gray-500">{{ item.name }}</div>
                     </div>
@@ -68,7 +74,7 @@
 
         <!-- Positions 列表 -->
         <div v-if="activeTab === 'positions'" class="flex-1 flex flex-col min-h-0">
-            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
                 <span>SYM</span>
                 <span>QTY/AVG</span>
                 <span>UNREALIZED</span>
@@ -79,8 +85,9 @@
                      :class="currentSymbol === pos.symbol ? 'bg-gray-800' : ''"
                      @click="loadChart(pos.symbol)">
                     <div>
-                        <div class="font-bold text-white flex items-center gap-2">
+                        <div class="font-bold text-white flex items-center gap-2 group">
                             {{ pos.symbol }}
+                            
                         </div>
                         <div class="text-xs text-blue-400 font-mono">{{ pos.shares }} 股</div>
                     </div>
@@ -93,6 +100,39 @@
                 </div>
                 <div v-if="!portfolio.positions || portfolio.positions.length === 0" class="p-4 text-center text-gray-500 text-xs">
                     No open positions.
+                </div>
+            </div>
+        </div>
+
+        <!-- Trades 列表 -->
+        <div v-if="activeTab === 'trades'" class="flex-1 flex flex-col min-h-0">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
+                <span>ACTION/SYM</span>
+                <span>QTY/PRICE</span>
+                <div class="flex items-center gap-2">
+                    <span>TIME</span>
+                    <button @click="showAddModal('trades')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div v-for="trade in portfolio.trades" :key="trade.id" 
+                     class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200 group">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-2">
+                            <span :class="trade.action === 'BUY' ? 'text-red-400' : 'text-green-400'">{{ trade.action }}</span> {{ trade.symbol }}
+                            <button @click.stop="delTrade(trade.id)" class="hidden group-hover:block ml-1 text-gray-500 hover:text-red-400">×</button>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-white font-mono">{{ trade.shares }} 股</div>
+                        <div class="text-xs text-gray-400 font-mono">@{{ trade.price.toFixed(2) }}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-500 font-mono">{{ trade.timestamp.substring(5, 16).replace('T', ' ') }}</div>
+                    </div>
+                </div>
+                <div v-if="!portfolio.trades || portfolio.trades.length === 0" class="p-4 text-center text-gray-500 text-xs">
+                    No trade history.
                 </div>
             </div>
         </div>
@@ -150,6 +190,55 @@
         </transition>
     </div>
 
+
+    <div v-if="modalType" class="absolute inset-0 z-50 bg-black/70 flex items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 shadow-2xl">
+            <h2 class="text-white font-bold mb-4">{{ modalType === 'watchlist' ? '加入自選股' : '新增交易紀錄' }}</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">股票代號 (Symbol)</label>
+                    <input v-model="modalForm.symbol" type="text" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500" placeholder="e.g. 2330">
+                </div>
+                <template v-if="modalType === 'watchlist'">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">名稱 (Name)</label>
+                        <input v-model="modalForm.name" type="text" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500" placeholder="e.g. TSMC">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">參考價/成本 (Ref Price)</label>
+                        <input v-model.number="modalForm.ref_price" type="number" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                    </div>
+                </template>
+                <template v-else>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">買賣方向 (Action)</label>
+                        <select v-model="modalForm.action" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                            <option value="BUY">買進 (BUY)</option>
+                            <option value="SELL">賣出 (SELL)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">股數 (Shares)</label>
+                        <input v-model.number="modalForm.shares" type="number" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">成交單價 (Price)</label>
+                        <input v-model.number="modalForm.price" type="number" step="0.01" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">成交時間 (Time)</label>
+                        <!-- 使用 color-scheme:dark 讓原生日曆選單變黑底 -->
+                        <input v-model="modalForm.timestamp" type="datetime-local" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500 [color-scheme:dark]">
+                    </div>
+                </template>
+            </div>
+            <div class="mt-6 flex gap-3">
+                <button @click="modalType = null" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition-colors">取消</button>
+                <button @click="submitModal" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded transition-colors font-bold">儲存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 右側邊欄：控制台 -->
     <div class="w-72 panel-bg border-l border-line flex flex-col">
         <div class="p-4 border-b border-line flex items-center gap-2">
@@ -160,12 +249,12 @@
         <div class="p-4 flex-1 overflow-y-auto space-y-6">
             <!-- 狀態監控 -->
             <div>
-                <div class="text-xs text-gray-500 mb-2 font-mono">[TECHNICAL SYNC]</div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[ACCOUNT SUMMARY]</div>
                 <div class="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300 space-y-1">
-                    <div>Target: {{ portfolio.agent_state?.target }}</div>
-                    <div>Phase: <span :class="portfolio.agent_state?.halted ? 'text-red' : 'text-white'">{{ portfolio.agent_state?.phase }}</span></div>
-                    <div>SMA20: <span class="text-white">Active</span></div>
-                    <div>MACD: <span class="text-green">Bullish Divergence</span></div>
+                    <div class="flex justify-between"><span>Total Equity:</span> <span class="text-white">${{ portfolio.summary?.total_equity?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Cash Balance:</span> <span class="text-gray-400">${{ portfolio.summary?.cash?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Market Value:</span> <span class="text-blue-400">${{ portfolio.summary?.market_value?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Realized PnL:</span> <span :class="portfolio.summary?.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'">${{ portfolio.summary?.realized_pnl?.toLocaleString() }}</span></div>
                 </div>
             </div>
 
@@ -249,6 +338,8 @@
                 let bbLowSeries = null;
                 const showRSI = ref(false);
                 const showBB = ref(false);
+                const modalType = ref(null); // 'watchlist' or 'positions'
+                const modalForm = reactive({ symbol: '', name: '', ref_price: 0, action: 'BUY', shares: 0, price: 0, timestamp: '' });
 
                 const showToast = (msg, icon = '✅') => {
                     toastMessage.value = msg;
@@ -582,6 +673,63 @@
                     } catch(e) { console.error(e); showToast('Chart Error: ' + e.message, '❌'); }
                 };
 
+                
+                const showAddModal = (type) => {
+                    modalType.value = type;
+                    modalForm.symbol = '';
+                    modalForm.name = '';
+                    modalForm.ref_price = 0;
+                    modalForm.shares = 0;
+                    modalForm.price = 0;
+                    modalForm.action = 'BUY';
+                    
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    modalForm.timestamp = now.toISOString().slice(0,16);
+                };
+
+                const submitModal = async () => {
+                    const endpoint = modalType.value === 'watchlist' ? '/api/watchlist' : '/api/trades';
+                    try {
+                        const res = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(modalForm)
+                        });
+                        const result = await res.json();
+                        showToast(result.message, '✅');
+                        modalType.value = null;
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                const editWatchlist = (item) => {
+                    modalType.value = 'watchlist';
+                    modalForm.symbol = item.symbol;
+                    modalForm.name = item.name;
+                    modalForm.ref_price = item.ref_price;
+                };
+
+                
+
+                const delWatchlist = async (symbol) => {
+                    try {
+                        const res = await fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' });
+                        const result = await res.json();
+                        showToast(result.message, '🗑️');
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                const delTrade = async (id) => {
+                    try {
+                        const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+                        const result = await res.json();
+                        showToast(result.message, '🗑️');
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
                 const fetchPortfolio = async () => {
                     try {
                         const res = await fetch('/api/portfolio');
@@ -632,7 +780,7 @@
                 });
 
                 return {
-                    portfolio, settings, currentSymbol, currentQuote, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, toggleIndicator,
+                    portfolio, settings, currentSymbol, currentQuote, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected
                 }
