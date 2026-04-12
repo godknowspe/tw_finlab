@@ -50,6 +50,21 @@ def get_kbars(stock_id: str):
         df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
         df['histogram'] = df['macd'] - df['signal']
         
+        # 計算 RSI 14
+        delta = df['close'].diff()
+        up = delta.clip(lower=0)
+        down = -1 * delta.clip(upper=0)
+        ema_up = up.ewm(com=13, adjust=False).mean()
+        ema_down = down.ewm(com=13, adjust=False).mean()
+        rs = ema_up / ema_down
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # 計算 Bollinger Bands (20, 2)
+        df['bb_mid'] = df['close'].rolling(window=20).mean()
+        df['bb_std'] = df['close'].rolling(window=20).std()
+        df['bb_up'] = df['bb_mid'] + 2 * df['bb_std']
+        df['bb_low'] = df['bb_mid'] - 2 * df['bb_std']
+        
         import math
         
         def safe_float(v):
@@ -70,6 +85,10 @@ def get_kbars(stock_id: str):
                 "macd": safe_float(row['macd']),
                 "signal": safe_float(row['signal']),
                 "histogram": safe_float(row['histogram']),
+                "rsi": safe_float(row.get('rsi')),
+                "bb_up": safe_float(row.get('bb_up')),
+                "bb_mid": safe_float(row.get('bb_mid')),
+                "bb_low": safe_float(row.get('bb_low')),
             })
         return result
     except Exception as e:
