@@ -71,3 +71,4 @@ data/*.db
 .vscode/
 *.swp
 *.swo
+web.log
