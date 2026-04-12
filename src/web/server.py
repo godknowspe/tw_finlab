@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from src.data.fetcher import get_stock_data_df
 import datetime
+import pandas as pd
 import os
 import asyncio
 import random
@@ -38,15 +39,37 @@ def get_kbars(stock_id: str):
         df = get_stock_data_df(stock_id, start_date)
         if df.empty:
             return []
+            
+        # 計算 SMA 20
+        df['sma20'] = df['close'].rolling(window=20).mean()
+        
+        # 計算 MACD (Fast=12, Slow=26, Signal=9)
+        exp1 = df['close'].ewm(span=12, adjust=False).mean()
+        exp2 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = exp1 - exp2
+        df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['histogram'] = df['macd'] - df['signal']
+        
+        import math
+        
+        def safe_float(v):
+            if pd.isna(v):
+                return None
+            return float(v)
+
         result = []
         for index, row in df.iterrows():
             result.append({
                 "time": index.strftime('%Y-%m-%d'),
-                "open": float(row['open']),
-                "high": float(row['high']),
-                "low": float(row['low']),
-                "close": float(row['close']),
-                "value": float(row['volume'])
+                "open": safe_float(row['open']),
+                "high": safe_float(row['high']),
+                "low": safe_float(row['low']),
+                "close": safe_float(row['close']),
+                "value": safe_float(row['volume']),
+                "sma20": safe_float(row['sma20']),
+                "macd": safe_float(row['macd']),
+                "signal": safe_float(row['signal']),
+                "histogram": safe_float(row['histogram']),
             })
         return result
     except Exception as e:
@@ -61,7 +84,8 @@ def get_portfolio():
             {"symbol": "2454", "name": "MediaTek", "last": 1050.00, "chg_pct": "+0.48%", "ref_price": 1045.00}
         ],
         "positions": [
-            {"symbol": "2330", "shares": 1000, "avg_cost": 750.00, "unrealized": 55500}
+            {"symbol": "2330", "shares": 2000, "avg_cost": 1850.00, "unrealized": 300000},
+            {"symbol": "2317", "shares": 5000, "avg_cost": 140.50, "unrealized": -100000}
         ],
         "agent_state": app_state["agent_state"],
         "settings": app_state["settings"]
@@ -89,7 +113,33 @@ def perform_action(req: ActionRequest):
         return {"status": "success", "message": "⚡️ 已強制發送執行訊號！"}
     return {"status": "error", "message": "未知的指令"}
 
+
+@app.get("/api/equity")
+def get_equity():
+    import random
+    today = datetime.date.today()
+    result = []
+    base_value = 5000000.0
+    
+    for i in range(120, -1, -1):
+        dt = today - datetime.timedelta(days=i)
+        # 避開週末
+        if dt.weekday() >= 5:
+            continue
+            
+        if not result:
+            val = base_value
+        else:
+            val = result[-1]["value"] * random.uniform(0.995, 1.01)
+        
+        result.append({
+            "time": dt.strftime('%Y-%m-%d'),
+            "value": round(val, 2)
+        })
+    return result
+
 # WebSockets endpoint to simulate real-time ticks
+
 @app.websocket("/api/ws/quotes/{stock_id}")
 async def websocket_quotes(websocket: WebSocket, stock_id: str):
     await websocket.accept()

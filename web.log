@@ -1,83 +1,458 @@
 INFO:     Will watch for changes in these directories: ['/Users/godknows/code/tw_finlab']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [69977] using StatReload
-INFO:     Started server process [70012]
+INFO:     Started reloader process [35811] using StatReload
+INFO:     Started server process [35845]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:62012 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62012 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62012 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62012 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62013 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62013 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     connection rejected (400 Bad Request)
+INFO:     127.0.0.1:62791 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62791 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62791 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62795 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:62792 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
 INFO:     connection closed
-INFO:     127.0.0.1:62214 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62214 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62214 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62214 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62214 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62214 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62214 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62263 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     127.0.0.1:62805 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:62792 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:62811 - "WebSocket /api/ws/quotes/2317" [accepted]
+INFO:     connection open
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:62825 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:62827 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for background tasks to complete. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [35845]
+INFO:     Started server process [36827]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:63224 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63224 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63224 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63229 - "WebSocket /api/ws/quotes/2330" [accepted]
 INFO:     connection open
 INFO:     connection closed
+INFO:     127.0.0.1:63224 - "GET /api/equity HTTP/1.1" 200 OK
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:63224 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63235 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:63224 - "GET /api/equity HTTP/1.1" 200 OK
+INFO:     connection closed
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:63225 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63248 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:63225 - "GET /api/equity HTTP/1.1" 200 OK
+INFO:     connection closed
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:63225 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63252 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:63282 - "GET /api/equity HTTP/1.1" 200 OK
+WebSocket client disconnected for 2330
+INFO:     127.0.0.1:63282 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63286 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     connection open
+WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for background tasks to complete. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [36827]
+INFO:     Started server process [38921]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:63379 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63379 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63379 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+INFO:     127.0.0.1:63380 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+INFO:     127.0.0.1:63391 - "GET /api/equity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63391 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+INFO:     127.0.0.1:63395 - "GET /api/equity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63395 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+INFO:     127.0.0.1:63436 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+INFO:     127.0.0.1:63491 - "GET /api/kbars/2330 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/godknows/.pyenv/versions/3.11.9/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
 WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [70012]
-INFO:     Started server process [72151]
+INFO:     Finished server process [38921]
+INFO:     Started server process [40101]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [72151]
-INFO:     Started server process [72237]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [72237]
-INFO:     Started server process [72284]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/web/server.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [72284]
-INFO:     Started server process [72525]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     127.0.0.1:62387 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62387 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62387 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62387 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62387 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62387 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62387 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62388 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62388 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62388 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62563 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62585 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62585 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62585 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62585 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62585 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62586 - "POST /api/action HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62586 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62586 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62586 - "GET /api/kbars/2317 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62586 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62618 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:63231 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63231 - "GET /api/portfolio HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63231 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63234 - "WebSocket /api/ws/quotes/2330" [accepted]
+INFO:     127.0.0.1:63528 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63550 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63550 - "GET /api/portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63550 - "GET /api/kbars/2330 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63553 - "WebSocket /api/ws/quotes/2330" [accepted]
 INFO:     connection open
