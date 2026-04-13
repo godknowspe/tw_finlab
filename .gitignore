@@ -72,3 +72,4 @@ data/*.db
 *.swp
 *.swo
 web.log
+patch_*.py

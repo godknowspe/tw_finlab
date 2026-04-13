@@ -19,16 +19,18 @@ app_state = {
     "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
     "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
     "watchlist": [
-        {"symbol": "2330", "name": "TSMC", "ref_price": 800.00},
-        {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00},
-        {"symbol": "2454", "name": "MediaTek", "ref_price": 1045.00}
+        {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
+        {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00, "market": "TW"},
+        {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"}
     ],
-    "cash": 10000000.0, # 初始千萬資金
+    "cash": {
+        "TWD": 10000000.0,
+        "USD": 50000.0
+    },
     "trades": [
-        {"id": 1, "symbol": "2330", "action": "BUY", "shares": 2000, "price": 1550.00, "timestamp": "2026-02-01T10:00:00"},
-        {"id": 2, "symbol": "2317", "action": "BUY", "shares": 5000, "price": 140.50, "timestamp": "2026-03-05T10:00:00"},
-        {"id": 3, "symbol": "2330", "action": "BUY", "shares": 1000, "price": 1600.00, "timestamp": "2026-03-10T10:00:00"},
-        {"id": 4, "symbol": "2330", "action": "SELL", "shares": 1000, "price": 1850.00, "timestamp": "2026-04-01T10:00:00"}
+        {"id": 1, "symbol": "2330", "action": "BUY", "shares": 2000, "price": 1550.00, "timestamp": "2026-02-01T10:00:00", "currency": "TWD"},
+        {"id": 2, "symbol": "AAPL", "action": "BUY", "shares": 100, "price": 175.50, "timestamp": "2026-03-05T10:00:00", "currency": "USD"},
+        {"id": 3, "symbol": "2330", "action": "SELL", "shares": 1000, "price": 1850.00, "timestamp": "2026-04-01T10:00:00", "currency": "TWD"}
     ]
 }
 
@@ -122,6 +124,9 @@ def get_portfolio():
     today = datetime.date.today()
     start_date = (today - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
     
+    # 這裡未來可改為透過 yfinance 動態抓取 USD/TWD 匯率，這裡暫用固定值
+    usd_twd_rate = 32.5
+    
     latest_prices = {}
     
     enriched_watchlist = []
@@ -139,22 +144,27 @@ def get_portfolio():
         enriched_watchlist.append({
             "symbol": sym,
             "name": item["name"],
-            "last": last_price,
+            "last": round(last_price, 2),
             "chg_pct": f"{sign}{chg_pct:.2f}%",
-            "ref_price": item["ref_price"]
+            "ref_price": item["ref_price"],
+            "market": item.get("market", "TW")
         })
         
     positions_map = {}
-    current_cash = app_state["cash"]
-    realized_pnl = 0.0
+    current_cash_twd = app_state["cash"]["TWD"]
+    current_cash_usd = app_state["cash"]["USD"]
+    realized_pnl_twd = 0.0
+    realized_pnl_usd = 0.0
     
     for trade in sorted(app_state["trades"], key=lambda x: x["timestamp"]):
         sym = trade["symbol"]
         shares = trade["shares"]
         price = trade["price"]
+        currency = trade.get("currency", "TWD")
+        market = "US" if currency == "USD" else "TW"
         
         if sym not in positions_map:
-            positions_map[sym] = {"shares": 0, "avg_cost": 0.0}
+            positions_map[sym] = {"shares": 0, "avg_cost": 0.0, "currency": currency, "market": market}
             
         pos = positions_map[sym]
         
@@ -162,19 +172,29 @@ def get_portfolio():
             total_cost = (pos["shares"] * pos["avg_cost"]) + (shares * price)
             pos["shares"] += shares
             pos["avg_cost"] = total_cost / pos["shares"] if pos["shares"] > 0 else 0.0
-            current_cash -= (shares * price)
+            if currency == "TWD":
+                current_cash_twd -= (shares * price)
+            else:
+                current_cash_usd -= (shares * price)
+                
         elif trade["action"] == "SELL":
             sell_shares = min(shares, pos["shares"])
             trade_pnl = (price - pos["avg_cost"]) * sell_shares
-            realized_pnl += trade_pnl
-            pos["shares"] -= sell_shares
-            current_cash += (sell_shares * price)
             
+            if currency == "TWD":
+                realized_pnl_twd += trade_pnl
+                current_cash_twd += (sell_shares * price)
+            else:
+                realized_pnl_usd += trade_pnl
+                current_cash_usd += (sell_shares * price)
+                
+            pos["shares"] -= sell_shares
             if pos["shares"] == 0:
                 pos["avg_cost"] = 0.0
 
     enriched_positions = []
-    total_market_value = 0.0
+    total_market_value_twd = 0.0
+    total_market_value_usd = 0.0
     
     for sym, pos in positions_map.items():
         if pos["shares"] <= 0:
@@ -186,24 +206,41 @@ def get_portfolio():
             
         last_price = latest_prices[sym]
         market_value = last_price * pos["shares"]
-        total_market_value += market_value
         unrealized = market_value - (pos["avg_cost"] * pos["shares"])
         
+        if pos["currency"] == "TWD":
+            total_market_value_twd += market_value
+        else:
+            total_market_value_usd += market_value
+            
         enriched_positions.append({
             "symbol": sym,
             "shares": pos["shares"],
             "avg_cost": round(pos["avg_cost"], 2),
-            "unrealized": int(unrealized)
+            "unrealized": int(unrealized) if pos["currency"] == "TWD" else round(unrealized, 2),
+            "currency": pos["currency"],
+            "market": pos["market"],
+            "market_value": int(market_value) if pos["currency"] == "TWD" else round(market_value, 2),
+            "last_price": round(last_price, 2)
         })
+
+    # 計算約當台幣總資產
+    equiv_cash_twd = current_cash_twd + (current_cash_usd * usd_twd_rate)
+    equiv_mv_twd = total_market_value_twd + (total_market_value_usd * usd_twd_rate)
+    equiv_total_equity = equiv_cash_twd + equiv_mv_twd
 
     return {
         "watchlist": enriched_watchlist,
         "positions": enriched_positions,
         "summary": {
-            "cash": int(current_cash),
-            "market_value": int(total_market_value),
-            "total_equity": int(current_cash + total_market_value),
-            "realized_pnl": int(realized_pnl)
+            "cash_twd": int(current_cash_twd),
+            "cash_usd": round(current_cash_usd, 2),
+            "market_value_twd": int(total_market_value_twd),
+            "market_value_usd": round(total_market_value_usd, 2),
+            "realized_pnl_twd": int(realized_pnl_twd),
+            "realized_pnl_usd": round(realized_pnl_usd, 2),
+            "equiv_total_equity_twd": int(equiv_total_equity),
+            "usd_twd_rate": usd_twd_rate
         },
         "trades": sorted(app_state["trades"], key=lambda x: x["timestamp"], reverse=True),
         "agent_state": app_state["agent_state"],
@@ -214,6 +251,7 @@ class WatchlistItem(BaseModel):
     symbol: str
     name: str
     ref_price: float
+    market: str = "TW"
 
 class TradeItem(BaseModel):
     symbol: str
@@ -221,11 +259,12 @@ class TradeItem(BaseModel):
     shares: int
     price: float
     timestamp: str
+    currency: str = "TWD"
 
 @app.post("/api/watchlist")
 def add_watchlist(item: WatchlistItem):
     if not any(w["symbol"] == item.symbol for w in app_state["watchlist"]):
-        app_state["watchlist"].append({"symbol": item.symbol, "name": item.name, "ref_price": item.ref_price})
+        app_state["watchlist"].append({"symbol": item.symbol, "name": item.name, "ref_price": item.ref_price, "market": item.market})
     return {"status": "success", "message": f"{item.symbol} 已加入自選股！"}
 
 @app.delete("/api/watchlist/{symbol}")
@@ -249,7 +288,8 @@ def add_trade(item: TradeItem):
         "action": item.action.upper(),
         "shares": item.shares,
         "price": item.price,
-        "timestamp": ts
+        "timestamp": ts,
+        "currency": item.currency
     }
     app_state["trades"].append(new_trade)
     action_cht = "買進" if new_trade["action"] == "BUY" else "賣出"
@@ -365,3 +405,10 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("src.web.server:app", host="0.0.0.0", port=8000, reload=True)
+
+from src.web.analysis import calculate_trade_analysis
+
+@app.get("/api/analysis")
+def get_trade_analysis():
+    results = calculate_trade_analysis(app_state["trades"])
+    return results
