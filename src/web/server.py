@@ -94,15 +94,42 @@ def get_kbars(stock_id: str):
             if pd.isna(v):
                 return None
             return float(v)
+        sym_trades = sorted([t for t in app_state["trades"] if t["symbol"] == stock_id], key=lambda x: x["timestamp"])
+        trade_idx = 0
+        shares = 0
+        avg_cost = 0.0
+        realized_pnl = 0.0
 
         result = []
         for index, row in df.iterrows():
+            current_date = index.strftime('%Y-%m-%d')
+            
+            while trade_idx < len(sym_trades) and sym_trades[trade_idx]["timestamp"][:10] <= current_date:
+                t = sym_trades[trade_idx]
+                t_price = t["price"]
+                t_shares = t["shares"]
+                if t["action"] == "BUY":
+                    total_cost = (shares * avg_cost) + (t_shares * t_price)
+                    shares += t_shares
+                    avg_cost = total_cost / shares if shares > 0 else 0.0
+                elif t["action"] == "SELL":
+                    sell_shares = min(t_shares, shares)
+                    realized_pnl += (t_price - avg_cost) * sell_shares
+                    shares -= sell_shares
+                    if shares == 0:
+                        avg_cost = 0.0
+                trade_idx += 1
+                
+            close_price = safe_float(row['close'])
+            unrealized_pnl = (close_price - avg_cost) * shares if close_price is not None else 0.0
+            total_pnl = realized_pnl + unrealized_pnl
+            
             result.append({
-                "time": index.strftime('%Y-%m-%d'),
+                "time": current_date,
                 "open": safe_float(row['open']),
                 "high": safe_float(row['high']),
                 "low": safe_float(row['low']),
-                "close": safe_float(row['close']),
+                "close": close_price,
                 "value": safe_float(row['volume']),
                 "sma20": safe_float(row['sma20']),
                 "macd": safe_float(row['macd']),
@@ -114,6 +141,7 @@ def get_kbars(stock_id: str):
                 "bb_low": safe_float(row.get('bb_low')),
                 "k": safe_float(row.get('k')),
                 "d": safe_float(row.get('d')),
+                "total_pnl": float(total_pnl)
             })
         return result
     except Exception as e:
