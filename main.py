@@ -1,7 +1,7 @@
 import datetime
 from src.data.updater import update_stock_data
 from src.engine.runner import BacktestRunner
-from src.engine.strategy import SmaCross, MacdStrategy, RsiStrategy, BollingerBandsStrategy
+from src.engine.strategy import SmaCross, MacdStrategy, RsiStrategy, BollingerBandsStrategy, KdStrategy
 
 def main():
     stock_id = "2330"
@@ -21,7 +21,8 @@ def main():
         ("SMA 均線交叉", SmaCross, {}),
         ("MACD 交叉", MacdStrategy, {}),
         ("RSI 超買超賣", RsiStrategy, {}),
-        ("布林通道", BollingerBandsStrategy, {})
+        ("布林通道", BollingerBandsStrategy, {}),
+        ("KD 隨機指標", KdStrategy, {})
     ]
 
     for strat_name, strat_class, params in strategies_to_test:

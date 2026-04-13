@@ -159,6 +159,7 @@
                     <button @click="toggleIndicator('macd')" :class="showMACD ? 'bg-orange-900 text-orange-300 border-orange-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">MACD</button>
                     <button @click="toggleIndicator('rsi')" :class="showRSI ? 'bg-pink-900 text-pink-300 border-pink-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">RSI</button>
                     <button @click="toggleIndicator('bb')" :class="showBB ? 'bg-cyan-900 text-cyan-300 border-cyan-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">BB</button>
+                    <button @click="toggleIndicator('kd')" :class="showKD ? 'bg-yellow-900 text-yellow-300 border-yellow-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">KD</button>
                 </div>
                 <span v-else class="text-gray-400">| Simulated Performance</span>
                 
@@ -338,6 +339,9 @@
                 let bbLowSeries = null;
                 const showRSI = ref(false);
                 const showBB = ref(false);
+                let kSeries = null;
+                let dSeries = null;
+                const showKD = ref(false);
                 const modalType = ref(null); // 'watchlist' or 'positions'
                 const modalForm = reactive({ symbol: '', name: '', ref_price: 0, action: 'BUY', shares: 0, price: 0, timestamp: '' });
 
@@ -429,6 +433,10 @@
                     bbMidSeries = chart.addLineSeries({ color: 'rgba(6, 182, 212, 0.6)', lineWidth: 1, visible: false });
                     bbLowSeries = chart.addLineSeries({ color: 'rgba(6, 182, 212, 0.6)', lineWidth: 1, lineStyle: 2, visible: false });
 
+                    kSeries = chart.addLineSeries({ color: '#facc15', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
+                    dSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
+                    chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
                     window.addEventListener('resize', () => {
                         chart.resize(container.clientWidth, container.clientHeight);
                     });
@@ -506,6 +514,10 @@
                             bbMidSeries.applyOptions({ visible: true });
                             bbLowSeries.applyOptions({ visible: true });
                         }
+                        if(showKD.value) {
+                            kSeries.applyOptions({ visible: true });
+                            dSeries.applyOptions({ visible: true });
+                        }
                         if(showMACD.value) {
                             macdSeries.applyOptions({ visible: true });
                             signalSeries.applyOptions({ visible: true });
@@ -520,6 +532,8 @@
                         bbUpSeries.applyOptions({ visible: false });
                         bbMidSeries.applyOptions({ visible: false });
                         bbLowSeries.applyOptions({ visible: false });
+                        kSeries.applyOptions({ visible: false });
+                        dSeries.applyOptions({ visible: false });
                         macdSeries.applyOptions({ visible: false });
                         signalSeries.applyOptions({ visible: false });
                         histogramSeries.applyOptions({ visible: false });
@@ -561,24 +575,34 @@
                         signalSeries.applyOptions({ visible: showMACD.value });
                         histogramSeries.applyOptions({ visible: showMACD.value });
                         updatePanes();
+                    } else if (type === 'kd') {
+                        showKD.value = !showKD.value;
+                        kSeries.applyOptions({ visible: showKD.value });
+                        dSeries.applyOptions({ visible: showKD.value });
+                        updatePanes();
                     }
                 };
 
                 const updatePanes = () => {
-                    let bottomCount = 0;
-                    if (showMACD.value) bottomCount++;
-                    if (showRSI.value) bottomCount++;
+                    let bottoms = [];
+                    if (showMACD.value) bottoms.push('macd');
+                    if (showRSI.value) bottoms.push('rsi');
+                    if (showKD.value) bottoms.push('kd');
                     
-                    if (bottomCount === 0) {
+                    let count = bottoms.length;
+                    if (count === 0) {
                         chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
-                    } else if (bottomCount === 1) {
-                        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.3 } });
-                        if (showMACD.value) chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
-                        if (showRSI.value) chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
                     } else {
-                        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.45 } });
-                        if (showMACD.value) chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.6, bottom: 0.22 } });
-                        if (showRSI.value) chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+                        let mainBottom = 0.1 + (count * 0.2); // 1->0.3, 2->0.5, 3->0.7
+                        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: mainBottom } });
+                        
+                        let heightPerPane = 0.2;
+                        let gap = 0.02;
+                        bottoms.forEach((paneId, index) => {
+                            let bottomPx = (count - 1 - index) * (heightPerPane + gap);
+                            let topPx = 1 - ((count - index) * (heightPerPane + gap)) + gap;
+                            chart.priceScale(paneId).applyOptions({ scaleMargins: { top: topPx, bottom: bottomPx } });
+                        });
                     }
                 };
 
@@ -594,6 +618,10 @@
                             bbUpSeries.applyOptions({ visible: true });
                             bbMidSeries.applyOptions({ visible: true });
                             bbLowSeries.applyOptions({ visible: true });
+                        }
+                        if(showKD.value) {
+                            kSeries.applyOptions({ visible: true });
+                            dSeries.applyOptions({ visible: true });
                         }
                         if(showMACD.value) {
                             macdSeries.applyOptions({ visible: true });
@@ -618,6 +646,8 @@
                             const bbUpData = [];
                             const bbMidData = [];
                             const bbLowData = [];
+                            const kData = [];
+                            const dData = [];
                             
                             data.forEach(d => {
                                 if(d.sma20 !== null) smaData.push({ time: d.time, value: d.sma20 });
@@ -637,6 +667,8 @@
                                 if(d.bb_up !== null) bbUpData.push({ time: d.time, value: d.bb_up });
                                 if(d.bb_mid !== null) bbMidData.push({ time: d.time, value: d.bb_mid });
                                 if(d.bb_low !== null) bbLowData.push({ time: d.time, value: d.bb_low });
+                                if(typeof d.k === "number" && !isNaN(d.k)) kData.push({ time: d.time, value: d.k });
+                                if(typeof d.d === "number" && !isNaN(d.d)) dData.push({ time: d.time, value: d.d });
                             });
                             
                             volumeSeries.setData(volData);
@@ -645,6 +677,8 @@
                             bbUpSeries.setData(bbUpData);
                             bbMidSeries.setData(bbMidData);
                             bbLowSeries.setData(bbLowData);
+                            kSeries.setData(kData);
+                            dSeries.setData(dData);
                             macdSeries.setData(macdData);
                             signalSeries.setData(signalData);
                             histogramSeries.setData(histData);
@@ -670,7 +704,7 @@
                                 });
                             }
 
-                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message, '❌'); }
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
                 };
 
                 
@@ -741,7 +775,7 @@
                             settings.take_profit_pct = data.settings.take_profit_pct;
                             settings.stop_loss_pct = data.settings.stop_loss_pct;
                         }
-                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message, '❌'); }
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
                 };
 
                 const saveSettings = async () => {
@@ -753,7 +787,7 @@
                         });
                         const result = await res.json();
                         showToast(result.message, '⚙️');
-                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message, '❌'); }
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
                 };
 
                 const sendAction = async (actionType) => {
@@ -769,7 +803,7 @@
                         if(actionType === 'resume') icon = '▶️';
                         showToast(result.message, icon);
                         fetchPortfolio();
-                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message, '❌'); }
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
                 };
 
                 onMounted(() => {
@@ -780,7 +814,7 @@
                 });
 
                 return {
-                    portfolio, settings, currentSymbol, currentQuote, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    portfolio, settings, currentSymbol, currentQuote, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected
                 }

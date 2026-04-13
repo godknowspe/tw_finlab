@@ -118,3 +118,34 @@ class CustomCombinedStrategy(bt.Strategy):
             # 賣出條件：MACD 死亡交叉，或是跌破 20 日均線 (強制停損)
             if self.mcross < 0 or self.data.close[0] < self.sma[0]:
                 self.close()
+
+class KdStrategy(bt.Strategy):
+    """KD 指標 (Stochastic Oscillator) 策略"""
+    params = dict(
+        period=9,
+        period_dfast=3,
+        period_dslow=3,
+        k_cross_up=20,  # K 值低於 20 黃金交叉買進
+        k_cross_down=80 # K 值高於 80 死亡交叉賣出
+    )
+
+    def __init__(self):
+        # 使用 StochasticFull 來計算 KD 值，預設對應參數 (9, 3, 3)
+        self.stoch = bt.indicators.StochasticFull(
+            self.data,
+            period=self.p.period,
+            period_dfast=self.p.period_dfast,
+            period_dslow=self.p.period_dslow
+        )
+        # stoch.percK 是 K 值, stoch.percD 是 D 值
+        self.k_cross_d = bt.indicators.CrossOver(self.stoch.percK, self.stoch.percD)
+
+    def next(self):
+        if not self.position:
+            # 買進：K 向上交叉 D，且 K 值處於超賣區 (低檔打底)
+            if self.k_cross_d > 0 and self.stoch.percK[0] < self.p.k_cross_up:
+                self.buy(size=1000)
+        else:
+            # 賣出：K 向下交叉 D，且 K 值處於超買區 (高檔過熱)
+            if self.k_cross_d < 0 and self.stoch.percK[0] > self.p.k_cross_down:
+                self.close()

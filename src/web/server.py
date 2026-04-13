@@ -77,6 +77,15 @@ def get_kbars(stock_id: str):
         df['bb_up'] = df['bb_mid'] + 2 * df['bb_std']
         df['bb_low'] = df['bb_mid'] - 2 * df['bb_std']
         
+        
+        # 計算 KD 指標 (9, 3, 3)
+        min_low = df['low'].rolling(window=9, min_periods=1).min()
+        max_high = df['high'].rolling(window=9, min_periods=1).max()
+        rsv = (df['close'] - min_low) / (max_high - min_low) * 100
+        rsv = rsv.fillna(50)
+        df['k'] = rsv.ewm(com=2, adjust=False).mean()
+        df['d'] = df['k'].ewm(com=2, adjust=False).mean()
+        
         import math
         
         def safe_float(v):
@@ -101,6 +110,8 @@ def get_kbars(stock_id: str):
                 "bb_up": safe_float(row.get('bb_up')),
                 "bb_mid": safe_float(row.get('bb_mid')),
                 "bb_low": safe_float(row.get('bb_low')),
+                "k": safe_float(row.get('k')),
+                "d": safe_float(row.get('d')),
             })
         return result
     except Exception as e:
