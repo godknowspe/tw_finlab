@@ -192,7 +192,7 @@
                 <button @click="toggleIndicator('kd')" :class="showKD ? 'bg-yellow-900 text-yellow-300 border-yellow-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">KD</button>
             </div>
         </div>
-        <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'"></div>
+        <div id="tvchart" class="flex-1 w-[calc(100%-24px)] h-full relative" v-show="chartMode !== 'analysis'"></div>
         
         
         <div id="analysis-container" class="flex-1 w-full overflow-y-auto p-4" v-show="chartMode === 'analysis'">
