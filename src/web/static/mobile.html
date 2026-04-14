@@ -51,7 +51,7 @@
                     <button @click="showAddModal('watchlist')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto">
+            <div class="flex-1 overflow-y-auto pb-24">
                 <div v-for="item in portfolio.watchlist" :key="item.symbol" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                      :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
@@ -83,7 +83,7 @@
                 <span>QTY/AVG</span>
                 <span>UNREALIZED</span>
             </div>
-            <div class="flex-1 overflow-y-auto">
+            <div class="flex-1 overflow-y-auto pb-24">
                 <div v-for="pos in portfolio.positions" :key="pos.symbol" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                      :class="currentSymbol === pos.symbol ? 'bg-gray-800' : ''"
@@ -118,7 +118,7 @@
                     <button @click="showAddModal('trades')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto">
+            <div class="flex-1 overflow-y-auto pb-24">
                 <div v-for="trade in portfolio.trades" :key="trade.id" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200 group">
                     <div>
@@ -394,7 +394,7 @@
 
 
     <!-- Mobile Bottom Nav -->
-    <div class="h-14 bg-gray-900 border-t border-gray-800 flex justify-around items-center text-xs shrink-0 w-full mt-auto mb-16 shadow-[0_0_15px_rgba(0,0,0,0.5)] rounded-t-lg">
+    <div class="h-14 bg-gray-900 border border-gray-700 flex justify-around items-center text-xs fixed bottom-16 left-4 right-4 z-50 shadow-[0_0_20px_rgba(0,0,0,0.8)] rounded-xl overflow-hidden">
         <button @click="mobileView = 'list'" :class="mobileView === 'list' ? 'text-blue-400' : 'text-gray-500'" class="flex flex-col items-center p-2 w-1/3">
             <span class="text-lg mb-1">📋</span>
             <span>清單</span>
