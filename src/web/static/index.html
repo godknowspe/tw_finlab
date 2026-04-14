@@ -155,7 +155,14 @@
                 <span v-else-if="chartMode === 'equity'" class="font-bold text-lg text-blue-400">TOTAL EQUITY (NTD)</span>
                 <span v-else-if="chartMode === 'analysis'" class="font-bold text-lg text-purple-400">TRADE EVALUATION (MAE/MFE)</span>
                 
-                <span v-if="chartMode === 'symbol'" class="text-gray-400">| 1D</span>
+                
+                <div v-if="chartMode === 'symbol'" class="flex gap-1 ml-2">
+                    <button @click="changeInterval('60m')" :class="currentInterval === '60m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">60分K</button>
+                    <button @click="changeInterval('1d')" :class="currentInterval === '1d' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">日K</button>
+                    <button @click="changeInterval('1wk')" :class="currentInterval === '1wk' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">5日K</button>
+                    <button @click="changeInterval('1mo')" :class="currentInterval === '1mo' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">20日K</button>
+                </div>
+
                 <div v-if="chartMode === 'symbol'" class="flex gap-2 ml-4">
                     <button @click="toggleIndicator('vol')" :class="showVOL ? 'bg-blue-900 text-blue-300 border-blue-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">VOL</button>
                     <button @click="toggleIndicator('sma')" :class="showSMA ? 'bg-purple-900 text-purple-300 border-purple-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">SMA20</button>
@@ -393,6 +400,7 @@
                 const portfolio = ref({ watchlist: [] });
                 const settings = reactive({ take_profit_pct: 10, stop_loss_pct: 5 });
                 const currentSymbol = ref('2330');
+                const currentInterval = ref('1d');
                 const activeTab = ref('watchlist');
                 const chartMode = ref('symbol');
                 const analysisData = ref([]);
@@ -712,6 +720,12 @@
                     }
                 };
 
+                
+                const changeInterval = (inv) => {
+                    currentInterval.value = inv;
+                    loadChart(currentSymbol.value);
+                };
+
                 const loadChart = async (symbol) => {
                     if (chartMode.value !== 'symbol') {
                         chartMode.value = 'symbol';
@@ -738,7 +752,7 @@
                     }
                     currentSymbol.value = symbol;
                     try {
-                        const res = await fetch(`/api/kbars/${symbol}`);
+                        const res = await fetch(`/api/kbars/${symbol}?interval=${currentInterval.value}`);
                         const data = await res.json();
                         if(data && data.length > 0) {
                             candleSeries.setData(data);
@@ -944,7 +958,7 @@
                 });
 
                 return {
-                    portfolio, settings, currentSymbol, currentQuote, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected
                 }

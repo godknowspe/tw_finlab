@@ -46,14 +46,35 @@ async def root():
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/api/kbars/{stock_id}")
-def get_kbars(stock_id: str):
+def get_kbars(stock_id: str, interval: str = "1d"):
     today = datetime.date.today()
-    start_date = (today - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
+    
+    # 決定資料起始日 (10年資料)
+    start_date = (today - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
+    
     try:
-        df = get_stock_data_df(stock_id, start_date)
+        import yfinance as yf
+        yf_symbol = stock_id
+        if stock_id.isdigit():
+            yf_symbol = f"{stock_id}.TW"
+            
+        if interval == '60m':
+            df = yf.download(yf_symbol, interval='60m', period='730d', progress=False)
+        else:
+            df = yf.download(yf_symbol, interval=interval, period='10y', progress=False)
+            
         if df.empty:
             return []
             
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+            
+        df.index.name = 'date'
+        df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+        
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        
         # 計算 SMA 20
         df['sma20'] = df['close'].rolling(window=20).mean()
         
@@ -102,9 +123,15 @@ def get_kbars(stock_id: str):
 
         result = []
         for index, row in df.iterrows():
-            current_date = index.strftime('%Y-%m-%d')
+            current_date_str = index.strftime('%Y-%m-%d')
             
-            while trade_idx < len(sym_trades) and sym_trades[trade_idx]["timestamp"][:10] <= current_date:
+            # 針對 lightweight-charts 的格式: 60m 需使用 unix timestamp
+            if interval == '60m':
+                chart_time = int(index.timestamp())
+            else:
+                chart_time = current_date_str
+            
+            while trade_idx < len(sym_trades) and sym_trades[trade_idx]["timestamp"][:10] <= current_date_str:
                 t = sym_trades[trade_idx]
                 t_price = t["price"]
                 t_shares = t["shares"]
@@ -125,7 +152,7 @@ def get_kbars(stock_id: str):
             total_pnl = realized_pnl + unrealized_pnl
             
             result.append({
-                "time": current_date,
+                "time": chart_time,
                 "open": safe_float(row['open']),
                 "high": safe_float(row['high']),
                 "low": safe_float(row['low']),
