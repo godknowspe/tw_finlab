@@ -185,9 +185,14 @@
                 </span>
             </div>
             
-            <div v-if="chartMode === 'symbol'" class="flex items-center gap-2 text-xs text-gray-400">
-                <span v-if="wsConnected" class="flex items-center gap-1 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500"></span> LIVE</span>
-                <span v-else class="flex items-center gap-1 text-red-400"><span class="w-2 h-2 rounded-full bg-red-500"></span> OFFLINE</span>
+            <div class="flex items-center gap-4">
+                <div v-if="chartMode === 'symbol'" class="flex items-center gap-2 text-xs text-gray-400">
+                    <span v-if="wsConnected" class="flex items-center gap-1 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500"></span> LIVE</span>
+                    <span v-else class="flex items-center gap-1 text-red-400"><span class="w-2 h-2 rounded-full bg-red-500"></span> OFFLINE</span>
+                </div>
+                <button @click="showRightPanel = !showRightPanel" class="text-gray-500 hover:text-white px-2 py-1 rounded bg-gray-800 border border-gray-700 text-xs transition-colors shrink-0">
+                    {{ showRightPanel ? '➡️ 隱藏控制台' : '⬅️ 顯示控制台' }}
+                </button>
             </div>
         </div>
         <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'"></div>
@@ -968,7 +973,7 @@
                 });
 
                 return {
-                    portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    showRightPanel, portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected
                 }
