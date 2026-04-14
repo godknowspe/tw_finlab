@@ -51,7 +51,7 @@
                     <button @click="showAddModal('watchlist')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto pb-24">
+            <div class="flex-1 overflow-y-auto pb-[120px]">
                 <div v-for="item in portfolio.watchlist" :key="item.symbol" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                      :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
@@ -83,7 +83,7 @@
                 <span>QTY/AVG</span>
                 <span>UNREALIZED</span>
             </div>
-            <div class="flex-1 overflow-y-auto pb-24">
+            <div class="flex-1 overflow-y-auto pb-[120px]">
                 <div v-for="pos in portfolio.positions" :key="pos.symbol" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                      :class="currentSymbol === pos.symbol ? 'bg-gray-800' : ''"
@@ -118,7 +118,7 @@
                     <button @click="showAddModal('trades')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto pb-24">
+            <div class="flex-1 overflow-y-auto pb-[120px]">
                 <div v-for="trade in portfolio.trades" :key="trade.id" 
                      class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200 group">
                     <div>
@@ -144,7 +144,7 @@
     </div>
 
     <!-- 中間：圖表 -->
-    <div class="flex-1 flex flex-col relative pb-24" v-show="mobileView === 'chart'">
+    <div class="flex-1 flex flex-col relative mb-[120px]" v-show="mobileView === 'chart'">
                 <div class="border-b border-line px-2 py-2 flex flex-col gap-2 bg-[#161b22]">
             <!-- 第 1 列：模式切換、名稱與報價、連線狀態 -->
             <div class="flex items-center justify-between">
@@ -326,7 +326,7 @@
     </div>
 
     <!-- 右側邊欄：控制台 -->
-    <div v-show="mobileView === 'agent'" class="w-full panel-bg border-b border-line flex flex-col flex-1 overflow-y-auto pb-24">
+    <div v-show="mobileView === 'agent'" class="w-full panel-bg border-b border-line flex flex-col flex-1 overflow-y-auto pb-16">
         <div class="p-4 border-b border-line flex items-center gap-2">
             <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
