@@ -144,7 +144,7 @@
     </div>
 
     <!-- 中間：圖表 -->
-    <div class="flex-1 flex flex-col relative" v-show="mobileView === 'chart'">
+    <div class="flex-1 flex flex-col relative pb-24" v-show="mobileView === 'chart'">
                 <div class="border-b border-line px-2 py-2 flex flex-col gap-2 bg-[#161b22]">
             <!-- 第 1 列：模式切換、名稱與報價、連線狀態 -->
             <div class="flex items-center justify-between">
@@ -326,7 +326,7 @@
     </div>
 
     <!-- 右側邊欄：控制台 -->
-    <div v-show="mobileView === 'agent'" class="w-full panel-bg border-b border-line flex flex-col flex-1 overflow-y-auto">
+    <div v-show="mobileView === 'agent'" class="w-full panel-bg border-b border-line flex flex-col flex-1 overflow-y-auto pb-24">
         <div class="p-4 border-b border-line flex items-center gap-2">
             <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
@@ -394,7 +394,7 @@
 
 
     <!-- Mobile Bottom Nav -->
-    <div class="h-14 bg-gray-900 border border-gray-700 flex justify-around items-center text-xs fixed bottom-16 left-4 right-4 z-50 shadow-[0_0_20px_rgba(0,0,0,0.8)] rounded-xl overflow-hidden">
+    <div class="h-14 bg-gray-900 border border-gray-700 flex justify-around items-center text-xs fixed bottom-1 left-4 right-4 z-50 shadow-[0_0_20px_rgba(0,0,0,0.8)] rounded-xl overflow-hidden">
         <button @click="mobileView = 'list'" :class="mobileView === 'list' ? 'text-blue-400' : 'text-gray-500'" class="flex flex-col items-center p-2 w-1/3">
             <span class="text-lg mb-1">📋</span>
             <span>清單</span>
