@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+        .panel-bg { background-color: #161b22; }
+        .border-line { border-color: #30363d; }
+        .text-green { color: #3fb950; }
+        .text-red { color: #f85149; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+        
+        .toast-enter-active, .toast-leave-active { transition: opacity 0.5s, transform 0.5s; }
+        .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-20px); }
+        
+        /* 閃爍動畫 (代表報價更新) */
+        .flash-green { animation: flashGreen 0.5s ease-out; }
+        .flash-red { animation: flashRed 0.5s ease-out; }
+        @keyframes flashGreen { 0% { background-color: rgba(63, 185, 80, 0.4); } 100% { background-color: transparent; } }
+        @keyframes flashRed { 0% { background-color: rgba(248, 81, 73, 0.4); } 100% { background-color: transparent; } }
+    
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+</head>
+<body class="flex h-screen font-sans text-sm">
+<div id="app" class="flex flex-col w-full h-full">
+
+    <!-- 左側邊欄 -->
+    <div class="w-full panel-bg border-b border-line flex flex-col flex-1" v-show="mobileView === 'list'">
+        <div class="p-4 border-b border-line flex justify-between items-center">
+            <span @click="activeTab = 'watchlist'" :class="activeTab === 'watchlist' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">WATCHLIST</span>
+            <span @click="activeTab = 'positions'" :class="activeTab === 'positions' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">POSITIONS</span>
+            <span @click="activeTab = 'trades'" :class="activeTab === 'trades' ? 'text-white' : 'text-gray-500'" class="font-bold tracking-wider text-xs cursor-pointer hover:text-white transition-colors">TRADES</span>
+        </div>
+        
+        <!-- Watchlist 列表 -->
+        <div v-if="activeTab === 'watchlist'" class="flex-1 flex flex-col min-h-0">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
+                <span>SYM</span>
+                <span class="flex-1 text-center">LAST</span>
+                <div class="flex items-center gap-2">
+                    <span>CHG%</span>
+                    <button @click="showAddModal('watchlist')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div v-for="item in portfolio.watchlist" :key="item.symbol" 
+                     class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
+                     :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
+                     @click="loadChart(item.symbol); mobileView = 'chart';">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-2 group">
+                            <span class="text-[10px] px-1 rounded bg-gray-700" :class="item.market === 'US' ? 'text-blue-300' : 'text-gray-400'">{{ item.market === 'US' ? '🇺🇸' : '🇹🇼' }}</span>
+                            {{ item.symbol }}
+                            <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
+                            <button @click.stop="editWatchlist(item)" class="hidden group-hover:block ml-1 text-blue-400 hover:text-blue-300">✎</button>
+                            <button @click.stop="delWatchlist(item.symbol)" class="hidden group-hover:block ml-1 text-red-500 hover:text-red-400">×</button>
+                        </div>
+                        <div class="text-xs text-gray-500">{{ item.name }}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
+                        <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
+                            {{ item.chg_pct }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions 列表 -->
+        <div v-if="activeTab === 'positions'" class="flex-1 flex flex-col min-h-0">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
+                <span>SYM</span>
+                <span>QTY/AVG</span>
+                <span>UNREALIZED</span>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div v-for="pos in portfolio.positions" :key="pos.symbol" 
+                     class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
+                     :class="currentSymbol === pos.symbol ? 'bg-gray-800' : ''"
+                     @click="loadChart(pos.symbol); mobileView = 'chart';">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-2 group">
+                            <span class="text-[10px] px-1 rounded bg-gray-700" :class="pos.market === 'US' ? 'text-blue-300' : 'text-gray-400'">{{ pos.market === 'US' ? '🇺🇸' : '🇹🇼' }}</span>
+                            {{ pos.symbol }}
+                        </div>
+                        <div class="text-xs text-blue-400 font-mono">{{ pos.shares }} 股</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-400 font-mono">@{{ pos.avg_cost.toFixed(2) }} <span class="text-[9px]">{{ pos.currency }}</span></div>
+                        <div class="text-sm font-mono font-bold" :class="pos.unrealized >= 0 ? 'text-green' : 'text-red'">
+                            {{ pos.unrealized > 0 ? '+' : '' }}{{ pos.unrealized.toLocaleString() }}
+                        </div>
+                    </div>
+                </div>
+                <div v-if="!portfolio.positions || portfolio.positions.length === 0" class="p-4 text-center text-gray-500 text-xs">
+                    No open positions.
+                </div>
+            </div>
+        </div>
+
+        <!-- Trades 列表 -->
+        <div v-if="activeTab === 'trades'" class="flex-1 flex flex-col min-h-0">
+            <div class="flex justify-between px-4 py-2 text-xs text-gray-500 border-b border-line items-center">
+                <span>ACTION/SYM</span>
+                <span>QTY/PRICE</span>
+                <div class="flex items-center gap-2">
+                    <span>TIME</span>
+                    <button @click="showAddModal('trades')" class="text-blue-400 hover:text-blue-300 ml-1">+</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div v-for="trade in portfolio.trades" :key="trade.id" 
+                     class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200 group">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-2">
+                            <span :class="trade.action === 'BUY' ? 'text-red-400' : 'text-green-400'">{{ trade.action }}</span> {{ trade.symbol }}
+                            <button @click.stop="delTrade(trade.id)" class="hidden group-hover:block ml-1 text-gray-500 hover:text-red-400">×</button>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-white font-mono">{{ trade.shares }} 股</div>
+                        <div class="text-xs text-gray-400 font-mono">@{{ trade.price.toFixed(2) }} <span class="text-[9px]">{{ trade.currency }}</span></div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-500 font-mono">{{ trade.timestamp.substring(5, 16).replace('T', ' ') }}</div>
+                    </div>
+                </div>
+                <div v-if="!portfolio.trades || portfolio.trades.length === 0" class="p-4 text-center text-gray-500 text-xs">
+                    No trade history.
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 中間：圖表 -->
+    <div class="flex-1 flex flex-col relative" v-show="mobileView === 'chart'">
+                <div class="border-b border-line px-2 py-2 flex flex-col gap-2 bg-[#161b22]">
+            <!-- 第 1 列：模式切換、名稱與報價、連線狀態 -->
+            <div class="flex items-center justify-between">
+                <div class="flex bg-gray-900 rounded p-1 border border-gray-700 shrink-0">
+                    <button @click="switchMode('symbol')" :class="chartMode === 'symbol' ? 'bg-gray-700 text-white' : 'text-gray-500'" class="px-2 py-0.5 text-[10px] rounded font-bold">SYM</button>
+                    <button @click="switchMode('equity')" :class="chartMode === 'equity' ? 'bg-blue-600 text-white' : 'text-gray-500'" class="px-2 py-0.5 text-[10px] rounded font-bold">EQT</button>
+                    <button @click="switchMode('analysis'); loadAnalysis();" :class="chartMode === 'analysis' ? 'bg-purple-600 text-white' : 'text-gray-500'" class="px-2 py-0.5 text-[10px] rounded font-bold">EVAL</button>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <span v-if="chartMode === 'symbol'" class="font-bold text-sm text-white">{{ currentSymbol }}</span>
+                    <span v-else-if="chartMode === 'equity'" class="font-bold text-sm text-blue-400">EQUITY</span>
+                    <span v-else-if="chartMode === 'analysis'" class="font-bold text-sm text-purple-400">EVALUATION</span>
+                    
+                    <span v-if="chartMode === 'symbol' && currentQuote" class="font-mono text-xs" :class="currentQuote.chg >= 0 ? 'text-green' : 'text-red'">
+                        {{ currentQuote.close.toFixed(2) }} ({{ currentQuote.chg >= 0 ? '+' : '' }}{{ currentQuote.chgPct }}%)
+                    </span>
+                    <span v-if="chartMode === 'equity' && equityValue" class="font-mono text-xs text-white">
+                        ${{ equityValue.toLocaleString() }}
+                    </span>
+                    
+                    <!-- 連線狀態小圓點 -->
+                    <span v-if="chartMode === 'symbol'">
+                        <span v-if="wsConnected" class="w-2 h-2 inline-block rounded-full bg-green-500"></span>
+                        <span v-else class="w-2 h-2 inline-block rounded-full bg-red-500"></span>
+                    </span>
+                </div>
+            </div>
+            
+            <!-- 第 2 列：K線週期 (橫向滑動) -->
+            <div v-if="chartMode === 'symbol'" class="flex gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar pb-1">
+                <button @click="changeInterval('60m')" :class="currentInterval === '60m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">60分K</button>
+                <button @click="changeInterval('1d')" :class="currentInterval === '1d' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">日K</button>
+                <button @click="changeInterval('1wk')" :class="currentInterval === '1wk' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">5日K</button>
+                <button @click="changeInterval('1mo')" :class="currentInterval === '1mo' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">20日K</button>
+            </div>
+            
+            <!-- 第 3 列：技術指標 (橫向滑動) -->
+            <div v-if="chartMode === 'symbol'" class="flex gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar pb-1">
+                <button @click="toggleIndicator('vol')" :class="showVOL ? 'bg-blue-900 text-blue-300 border-blue-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">VOL</button>
+                <button @click="toggleIndicator('sma')" :class="showSMA ? 'bg-purple-900 text-purple-300 border-purple-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">SMA20</button>
+                <button @click="toggleIndicator('macd')" :class="showMACD ? 'bg-orange-900 text-orange-300 border-orange-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">MACD</button>
+                <button @click="toggleIndicator('rsi')" :class="showRSI ? 'bg-pink-900 text-pink-300 border-pink-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">RSI</button>
+                <button @click="toggleIndicator('bb')" :class="showBB ? 'bg-cyan-900 text-cyan-300 border-cyan-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">BB</button>
+                <button @click="toggleIndicator('kd')" :class="showKD ? 'bg-yellow-900 text-yellow-300 border-yellow-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">KD</button>
+            </div>
+        </div>
+        <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'"></div>
+        
+        
+        <div id="analysis-container" class="flex-1 w-full overflow-y-auto p-4" v-show="chartMode === 'analysis'">
+            <div class="bg-gray-900 rounded-lg p-4 border border-gray-700 mb-4 shadow-lg">
+                <h3 class="text-white font-bold text-md mb-3 border-b border-gray-700 pb-2">交易優劣分析 (FIFO配對)</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="text-gray-400 border-b border-gray-700">
+                                <th class="pb-2">商品</th>
+                                <th class="pb-2">買進日</th>
+                                <th class="pb-2">賣出日</th>
+                                <th class="pb-2">持倉天數</th>
+                                <th class="pb-2 text-right">數量</th>
+                                <th class="pb-2 text-right">進場價</th>
+                                <th class="pb-2 text-right">出場價</th>
+                                <th class="pb-2 text-right">MAE(%)</th>
+                                <th class="pb-2 text-right">MFE(%)</th>
+                                <th class="pb-2 text-right">交易效率(%)</th>
+                                <th class="pb-2 text-right">已實現盈虧</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-300">
+                            <tr v-for="(row, idx) in analysisData" :key="idx" class="border-b border-gray-800 hover:bg-gray-800">
+                                <td class="py-2 font-bold text-blue-300">{{ row.symbol }}</td>
+                                <td class="py-2">{{ row.buy_date }}</td>
+                                <td class="py-2">{{ row.sell_date }}</td>
+                                <td class="py-2">{{ Math.floor((new Date(row.sell_date) - new Date(row.buy_date))/(1000*60*60*24)) }}天</td>
+                                <td class="py-2 text-right text-gray-400 font-mono">{{ row.shares }}</td>
+                                <td class="py-2 text-right font-mono">{{ row.buy_price.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono">{{ row.sell_price.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono" :class="row.mae_pct < -5 ? 'text-red-400' : ''">{{ row.mae_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-green-400">{{ row.mfe_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-yellow-300">{{ row.efficiency_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono" :class="row.realized >= 0 ? 'text-green-400' : 'text-red-400'">{{ row.realized.toFixed(2) }}</td>
+                            </tr>
+                            <tr v-if="analysisData.length === 0">
+                                <td colspan="11" class="py-6 text-center text-gray-500 italic">目前無已平倉紀錄可供分析</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-gray-900 rounded p-4 border border-gray-700">
+                    <h4 class="text-white font-bold mb-2">指標說明</h4>
+                    <ul class="text-xs text-gray-400 space-y-2">
+                        <li><span class="text-red-400">MAE (最大不利區間)</span>: 買進後最多跌了多少(%)才漲回來。越低代表進場點越差(接刀)。</li>
+                        <li><span class="text-green-400">MFE (最大有利區間)</span>: 持有期間最多漲了多少(%)。用來看你錯過的高點有多少。</li>
+                        <li><span class="text-yellow-300">Trade Efficiency (交易效率)</span>: (出場價-進場價)/(期間最高-期間最低)。看出你吃到了整波行情的百分之幾(%)。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast 通知 -->
+        <transition name="toast">
+            <div v-if="toastMessage" class="absolute top-4 right-4 z-50 bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3">
+                <span class="text-xl">{{ toastIcon }}</span>
+                <div>{{ toastMessage }}</div>
+            </div>
+        </transition>
+    </div>
+
+
+    <div v-if="modalType" class="absolute inset-0 z-50 bg-black/70 flex items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 shadow-2xl">
+            <h2 class="text-white font-bold mb-4">{{ modalType === 'watchlist' ? '加入自選股' : '新增交易紀錄' }}</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">股票代號 (Symbol)</label>
+                    <input v-model="modalForm.symbol" type="text" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500" placeholder="e.g. 2330">
+                </div>
+                <template v-if="modalType === 'watchlist'">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">名稱 (Name)</label>
+                        <input v-model="modalForm.name" type="text" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500" placeholder="e.g. TSMC">
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">市場 (Market)</label>
+                            <select v-model="modalForm.market" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                                <option value="TW">🇹🇼 TW</option>
+                                <option value="US">🇺🇸 US</option>
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">參考價 (Ref Price)</label>
+                            <input v-model.number="modalForm.ref_price" type="number" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+                </template>
+                <template v-else>
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">方向 (Action)</label>
+                            <select v-model="modalForm.action" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                                <option value="BUY">買進 (BUY)</option>
+                                <option value="SELL">賣出 (SELL)</option>
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">幣別 (Currency)</label>
+                            <select v-model="modalForm.currency" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                                <option value="TWD">TWD</option>
+                                <option value="USD">USD</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">股數 (Shares)</label>
+                        <input v-model.number="modalForm.shares" type="number" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">成交單價 (Price)</label>
+                        <input v-model.number="modalForm.price" type="number" step="0.01" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">成交時間 (Time)</label>
+                        <!-- 使用 color-scheme:dark 讓原生日曆選單變黑底 -->
+                        <input v-model="modalForm.timestamp" type="datetime-local" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-blue-500 [color-scheme:dark]">
+                    </div>
+                </template>
+            </div>
+            <div class="mt-6 flex gap-3">
+                <button @click="modalType = null" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition-colors">取消</button>
+                <button @click="submitModal" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded transition-colors font-bold">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右側邊欄：控制台 -->
+    <div v-show="mobileView === 'agent'" class="w-full panel-bg border-b border-line flex flex-col flex-1 overflow-y-auto">
+        <div class="p-4 border-b border-line flex items-center gap-2">
+            <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
+        </div>
+
+        <div class="p-4 flex-1 overflow-y-auto space-y-6">
+            <!-- 狀態監控 -->
+            <div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[ACCOUNT SUMMARY]</div>
+                <div class="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300 space-y-1">
+                    <div class="flex justify-between border-b border-gray-700 pb-1 mb-1"><span class="text-white font-bold">Total (TWD):</span> <span class="text-white font-bold">${{ portfolio.summary?.equiv_total_equity_twd?.toLocaleString() }}</span></div>
+                    
+                    <div class="text-[10px] text-gray-500 mt-2 mb-1">🇹🇼 TW MARKET (TWD)</div>
+                    <div class="flex justify-between"><span>Cash:</span> <span class="text-gray-400">${{ portfolio.summary?.cash_twd?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Market Value:</span> <span class="text-blue-400">${{ portfolio.summary?.market_value_twd?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Realized PnL:</span> <span :class="portfolio.summary?.realized_pnl_twd >= 0 ? 'text-green-400' : 'text-red-400'">${{ portfolio.summary?.realized_pnl_twd?.toLocaleString() }}</span></div>
+                    
+                    <div class="text-[10px] text-gray-500 mt-2 mb-1">🇺🇸 US MARKET (USD)</div>
+                    <div class="flex justify-between"><span>Cash:</span> <span class="text-gray-400">${{ portfolio.summary?.cash_usd?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Market Value:</span> <span class="text-blue-400">${{ portfolio.summary?.market_value_usd?.toLocaleString() }}</span></div>
+                    <div class="flex justify-between"><span>Realized PnL:</span> <span :class="portfolio.summary?.realized_pnl_usd >= 0 ? 'text-green-400' : 'text-red-400'">${{ portfolio.summary?.realized_pnl_usd?.toLocaleString() }}</span></div>
+                    <div class="text-[9px] text-gray-600 mt-1 text-right">Rate: {{ portfolio.summary?.usd_twd_rate }}</div>
+                </div>
+            </div>
+
+            <div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[ACTIVE STATE]</div>
+                <div class="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300 space-y-1" :class="portfolio.agent_state?.halted ? 'border border-red-800' : 'border border-gray-700'">
+                    <div>exposure: {{ portfolio.agent_state?.exposure }}</div>
+                    <div>risk_budget: 12000</div>
+                    <div>halted: <span :class="portfolio.agent_state?.halted ? 'text-red font-bold' : 'text-green'">{{ portfolio.agent_state?.halted }}</span></div>
+                </div>
+            </div>
+            
+            <!-- 策略參數 -->
+            <div>
+                 <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY SETTINGS]</div>
+                 <div class="space-y-3 text-xs">
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Take Profit (%)</span>
+                         <input type="number" v-model.number="settings.take_profit_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Stop Loss (%)</span>
+                         <input type="number" v-model.number="settings.stop_loss_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                 </div>
+            </div>
+        </div>
+
+        <!-- 動作按鈕 -->
+        <div class="p-4 border-t border-line space-y-3">
+            <button @click="sendAction('execute')" :disabled="portfolio.agent_state?.halted" class="w-full py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 font-bold text-xs rounded border border-gray-600 transition">
+                ⚡️ FORCE EXECUTE
+            </button>
+            
+            <button v-if="!portfolio.agent_state?.halted" @click="sendAction('halt')" class="w-full py-2 bg-red-900/40 hover:bg-red-800/80 text-red-400 font-bold text-xs rounded border border-red-800 transition">
+                ⨂ EMERGENCY HALT
+            </button>
+            <button v-else @click="sendAction('resume')" class="w-full py-2 bg-green-900/40 hover:bg-green-800/80 text-green-400 font-bold text-xs rounded border border-green-800 transition shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                ▶️ RESUME TRADING
+            </button>
+        </div>
+    </div>
+
+</div>
+
+    <script>
+        const { createApp, ref, onMounted, reactive } = Vue;
+
+        createApp({
+            setup() {
+                const portfolio = ref({ watchlist: [] });
+                const settings = reactive({ take_profit_pct: 10, stop_loss_pct: 5 });
+                const currentSymbol = ref('2330');
+                const currentInterval = ref('1d');
+                const activeTab = ref('watchlist');
+                const mobileView = ref('list');
+                const chartMode = ref('symbol');
+                const analysisData = ref([]);
+                const equityValue = ref(null);
+                let costLine = null;
+                const currentQuote = ref(null);
+                
+                const toastMessage = ref('');
+                const toastIcon = ref('🔔');
+                
+                // WebSocket state
+                const wsConnected = ref(false);
+                let ws = null;
+
+                let chart = null;
+                let candleSeries = null;
+                let symbolEquitySeries = null;
+                let areaSeries = null;
+                let smaSeries = null;
+                let macdSeries = null;
+                let signalSeries = null;
+                let histogramSeries = null;
+                let volumeSeries = null;
+                const showVOL = ref(false);
+                const showSMA = ref(false);
+                const showMACD = ref(false);
+                let rsiSeries = null;
+                let bbUpSeries = null;
+                let bbMidSeries = null;
+                let bbLowSeries = null;
+                const showRSI = ref(false);
+                const showBB = ref(false);
+                let kSeries = null;
+                let dSeries = null;
+                const showKD = ref(false);
+                const modalType = ref(null); // 'watchlist' or 'positions'
+                const modalForm = reactive({ symbol: '', name: '', ref_price: 0, action: 'BUY', shares: 0, price: 0, timestamp: '', market: 'TW', currency: 'TWD' });
+
+                const showToast = (msg, icon = '✅') => {
+                    toastMessage.value = msg;
+                    toastIcon.value = icon;
+                    setTimeout(() => { toastMessage.value = ''; }, 3000);
+                };
+
+                const initChart = () => {
+                    const container = document.getElementById('tvchart');
+                    chart = LightweightCharts.createChart(container, {
+                        width: container.clientWidth,
+                        height: container.clientHeight || 600,
+                        autoSize: true,
+                        layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
+                        grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
+                        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                        rightPriceScale: { borderColor: '#30363d' },
+                        timeScale: { borderColor: '#30363d', timeVisible: true },
+                    });
+
+                    symbolEquitySeries = chart.addLineSeries({
+                        color: '#f59e0b', // amber-500
+                        lineWidth: 2,
+                        priceScaleId: 'left',
+                        visible: true,
+                        title: 'Total PnL'
+                    });
+                    
+                    candleSeries = chart.addCandlestickSeries({
+                        upColor: '#f85149', downColor: '#3fb950', 
+                        borderDownColor: '#3fb950', borderUpColor: '#f85149',
+                        wickDownColor: '#3fb950', wickUpColor: '#f85149',
+                    });
+                    
+                    areaSeries = chart.addAreaSeries({
+                        topColor: 'rgba(59, 130, 246, 0.4)',
+                        bottomColor: 'rgba(59, 130, 246, 0.0)',
+                        lineColor: '#3b82f6',
+                        lineWidth: 2,
+                    });
+                    // Initially hide equity curve
+                    areaSeries.applyOptions({ visible: false });
+                    
+                    smaSeries = chart.addLineSeries({
+                        color: '#c084fc', // purple-400
+                        lineWidth: 2,
+                        visible: false,
+                    });
+                    
+                    volumeSeries = chart.addHistogramSeries({
+                        color: '#26a69a',
+                        priceFormat: { type: 'volume' },
+                        priceScaleId: '', // overlay on main chart
+                        visible: false,
+                    });
+                    volumeSeries.priceScale().applyOptions({
+                        scaleMargins: { top: 0.8, bottom: 0 },
+                    });
+                    
+                    // Create MACD pane (bottom)
+                    histogramSeries = chart.addHistogramSeries({
+                        color: '#f97316',
+                        priceFormat: { type: 'volume' },
+                        priceScaleId: 'macd',
+                        visible: false,
+                    });
+                    macdSeries = chart.addLineSeries({
+                        color: '#fb923c', // orange-400
+                        lineWidth: 2,
+                        priceScaleId: 'macd',
+                        visible: false,
+                    });
+                    signalSeries = chart.addLineSeries({
+                        color: '#60a5fa', // blue-400
+                        lineWidth: 2,
+                        priceScaleId: 'macd',
+                        visible: false,
+                    });
+                    
+                    chart.priceScale('macd').applyOptions({
+                        scaleMargins: { top: 0.8, bottom: 0 },
+                    });
+                    
+                    rsiSeries = chart.addLineSeries({
+                        color: '#ec4899', // pink-500
+                        lineWidth: 2,
+                        priceScaleId: 'rsi',
+                        visible: false,
+                    });
+                    chart.priceScale('rsi').applyOptions({
+                        scaleMargins: { top: 0.8, bottom: 0 },
+                    });
+                    
+                    bbUpSeries = chart.addLineSeries({ color: 'rgba(6, 182, 212, 0.6)', lineWidth: 1, lineStyle: 2, visible: false });
+                    bbMidSeries = chart.addLineSeries({ color: 'rgba(6, 182, 212, 0.6)', lineWidth: 1, visible: false });
+                    bbLowSeries = chart.addLineSeries({ color: 'rgba(6, 182, 212, 0.6)', lineWidth: 1, lineStyle: 2, visible: false });
+
+                    kSeries = chart.addLineSeries({ color: '#facc15', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
+                    dSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
+                    chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
+                    window.addEventListener('resize', () => {
+                        chart.resize(container.clientWidth, container.clientHeight);
+                    });
+                };
+
+                const connectWebSocket = (symbol) => {
+                    if(ws) {
+                        ws.close();
+                        ws = null;
+                    }
+                    
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${symbol}`;
+                    ws = new WebSocket(wsUrl);
+                    
+                    ws.onopen = () => {
+                        wsConnected.value = true;
+                        showToast(`已連線至 ${symbol} 即時報價`, '🟢');
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if(data.symbol === currentSymbol.value) {
+                            // 更新 K 線圖最新的 Candle
+                            candleSeries.update(data.candle);
+                            
+                            // 尋找 Watchlist 中對應的股票來更新左側面板與上方數值
+                            const watchItem = portfolio.value.watchlist.find(i => i.symbol === data.symbol);
+                            if(watchItem) {
+                                const oldPrice = watchItem.last;
+                                const newPrice = data.candle.close;
+                                
+                                // 計算漲跌幅
+                                const chg = newPrice - watchItem.ref_price;
+                                const chgPct = (chg / watchItem.ref_price * 100).toFixed(2);
+                                const sign = chg >= 0 ? '+' : '';
+                                
+                                watchItem.last = newPrice;
+                                watchItem.chg_pct = `${sign}${chgPct}%`;
+                                
+                                // 觸發閃爍特效 (綠漲紅跌)
+                                if (newPrice > oldPrice) {
+                                    watchItem.flashClass = 'flash-green';
+                                } else if (newPrice < oldPrice) {
+                                    watchItem.flashClass = 'flash-red';
+                                }
+                                setTimeout(() => { watchItem.flashClass = ''; }, 500);
+                                
+                                // 更新上方狀態列
+                                currentQuote.value = {
+                                    close: newPrice,
+                                    chg: chg,
+                                    chgPct: Math.abs(chgPct)
+                                };
+                            }
+                        }
+                    };
+                    
+                    ws.onclose = () => {
+                        wsConnected.value = false;
+                    };
+                };
+
+                
+                const switchMode = async (mode) => {
+                    chartMode.value = mode;
+                    if (mode === 'symbol') {
+                        areaSeries.applyOptions({ visible: false });
+                        candleSeries.applyOptions({ visible: true });
+                        symbolEquitySeries.applyOptions({ visible: true });
+                        if(showVOL.value) volumeSeries.applyOptions({ visible: true });
+                        if(showSMA.value) smaSeries.applyOptions({ visible: true });
+                        if(showRSI.value) rsiSeries.applyOptions({ visible: true });
+                        if(showBB.value) {
+                            bbUpSeries.applyOptions({ visible: true });
+                            bbMidSeries.applyOptions({ visible: true });
+                            bbLowSeries.applyOptions({ visible: true });
+                        }
+                        if(showKD.value) {
+                            kSeries.applyOptions({ visible: true });
+                            dSeries.applyOptions({ visible: true });
+                        }
+                        if(showMACD.value) {
+                            macdSeries.applyOptions({ visible: true });
+                            signalSeries.applyOptions({ visible: true });
+                            histogramSeries.applyOptions({ visible: true });
+                        }
+                        loadChart(currentSymbol.value);
+                    } else {
+                        candleSeries.applyOptions({ visible: false });
+                        volumeSeries.applyOptions({ visible: false });
+                        smaSeries.applyOptions({ visible: false });
+                        rsiSeries.applyOptions({ visible: false });
+                        bbUpSeries.applyOptions({ visible: false });
+                        bbMidSeries.applyOptions({ visible: false });
+                        bbLowSeries.applyOptions({ visible: false });
+                        kSeries.applyOptions({ visible: false });
+                        dSeries.applyOptions({ visible: false });
+                        macdSeries.applyOptions({ visible: false });
+                        signalSeries.applyOptions({ visible: false });
+                        histogramSeries.applyOptions({ visible: false });
+                        areaSeries.applyOptions({ visible: true });
+                        symbolEquitySeries.applyOptions({ visible: false });
+                        if(ws) { ws.close(); wsConnected.value = false; }
+                        
+                        try {
+                            const res = await fetch('/api/equity');
+                            const data = await res.json();
+                            if(data && data.length > 0) {
+                                areaSeries.setData(data);
+                                chart.timeScale().fitContent();
+                                equityValue.value = data[data.length - 1].value;
+                            }
+                        } catch(e) { console.error(e); }
+                    }
+                };
+
+                
+                const toggleIndicator = (type) => {
+                    if (type === 'vol') {
+                        showVOL.value = !showVOL.value;
+                        volumeSeries.applyOptions({ visible: showVOL.value });
+                    } else if (type === 'sma') {
+                        showSMA.value = !showSMA.value;
+                        smaSeries.applyOptions({ visible: showSMA.value });
+                    } else if (type === 'rsi') {
+                        showRSI.value = !showRSI.value;
+                        rsiSeries.applyOptions({ visible: showRSI.value });
+                        updatePanes();
+                    } else if (type === 'bb') {
+                        showBB.value = !showBB.value;
+                        bbUpSeries.applyOptions({ visible: showBB.value });
+                        bbMidSeries.applyOptions({ visible: showBB.value });
+                        bbLowSeries.applyOptions({ visible: showBB.value });
+                    } else if (type === 'macd') {
+                        showMACD.value = !showMACD.value;
+                        macdSeries.applyOptions({ visible: showMACD.value });
+                        signalSeries.applyOptions({ visible: showMACD.value });
+                        histogramSeries.applyOptions({ visible: showMACD.value });
+                        updatePanes();
+                    } else if (type === 'kd') {
+                        showKD.value = !showKD.value;
+                        kSeries.applyOptions({ visible: showKD.value });
+                        dSeries.applyOptions({ visible: showKD.value });
+                        updatePanes();
+                    }
+                };
+
+                const updatePanes = () => {
+                    let bottoms = [];
+                    if (showMACD.value) bottoms.push('macd');
+                    if (showRSI.value) bottoms.push('rsi');
+                    if (showKD.value) bottoms.push('kd');
+                    
+                    let count = bottoms.length;
+                    if (count === 0) {
+                        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+                    } else {
+                        let mainBottom = 0.1 + (count * 0.2); // 1->0.3, 2->0.5, 3->0.7
+                        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: mainBottom } });
+                        
+                        let heightPerPane = 0.2;
+                        let gap = 0.02;
+                        bottoms.forEach((paneId, index) => {
+                            let bottomPx = (count - 1 - index) * (heightPerPane + gap);
+                            let topPx = 1 - ((count - index) * (heightPerPane + gap)) + gap;
+                            chart.priceScale(paneId).applyOptions({ scaleMargins: { top: topPx, bottom: bottomPx } });
+                        });
+                    }
+                };
+
+                
+                const loadAnalysis = async () => {
+                    try {
+                        const res = await fetch('/api/analysis');
+                        analysisData.value = await res.json();
+                    } catch (e) {
+                        console.error("Failed to load analysis:", e);
+                    }
+                };
+                const changeInterval = (inv) => {
+                    currentInterval.value = inv;
+                    if (chart) {
+                        chart.applyOptions({
+                            timeScale: { timeVisible: inv === '60m' }
+                        });
+                    }
+                    loadChart(currentSymbol.value);
+                };
+
+
+                const loadChart = async (symbol) => {
+                    if (chartMode.value !== 'symbol') {
+                        chartMode.value = 'symbol';
+                        areaSeries.applyOptions({ visible: false });
+                        candleSeries.applyOptions({ visible: true });
+                        symbolEquitySeries.applyOptions({ visible: true });
+                        if(showVOL.value) volumeSeries.applyOptions({ visible: true });
+                        if(showSMA.value) smaSeries.applyOptions({ visible: true });
+                        if(showRSI.value) rsiSeries.applyOptions({ visible: true });
+                        if(showBB.value) {
+                            bbUpSeries.applyOptions({ visible: true });
+                            bbMidSeries.applyOptions({ visible: true });
+                            bbLowSeries.applyOptions({ visible: true });
+                        }
+                        if(showKD.value) {
+                            kSeries.applyOptions({ visible: true });
+                            dSeries.applyOptions({ visible: true });
+                        }
+                        if(showMACD.value) {
+                            macdSeries.applyOptions({ visible: true });
+                            signalSeries.applyOptions({ visible: true });
+                            histogramSeries.applyOptions({ visible: true });
+                        }
+                    }
+                    currentSymbol.value = symbol;
+                    try {
+                        const res = await fetch(`/api/kbars/${symbol}?interval=${currentInterval.value}`);
+                        const data = await res.json();
+                        if(data && data.length > 0) {
+                            candleSeries.setData(data);
+                            
+                            // 準備指標資料
+                            const smaData = [];
+                            const macdData = [];
+                            const signalData = [];
+                            const histData = [];
+                            const volData = [];
+                            const rsiData = [];
+                            const bbUpData = [];
+                            const bbMidData = [];
+                            const bbLowData = [];
+                            const kData = [];
+                            const dData = [];
+                            
+                            const pnlData = [];
+                            data.forEach(d => {
+                                if(d.total_pnl !== undefined) pnlData.push({ time: d.time, value: d.total_pnl });
+                                if(d.sma20 !== null) smaData.push({ time: d.time, value: d.sma20 });
+                                if(d.macd !== null) macdData.push({ time: d.time, value: d.macd });
+                                if(d.signal !== null) signalData.push({ time: d.time, value: d.signal });
+                                if(d.histogram !== null) histData.push({ 
+                                    time: d.time, 
+                                    value: d.histogram, 
+                                    color: d.histogram >= 0 ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)'
+                                });
+                                if(d.value !== null) volData.push({
+                                    time: d.time,
+                                    value: d.value,
+                                    color: d.close >= d.open ? 'rgba(63, 185, 80, 0.4)' : 'rgba(248, 81, 73, 0.4)'
+                                });
+                                if(d.rsi !== null) rsiData.push({ time: d.time, value: d.rsi });
+                                if(d.bb_up !== null) bbUpData.push({ time: d.time, value: d.bb_up });
+                                if(d.bb_mid !== null) bbMidData.push({ time: d.time, value: d.bb_mid });
+                                if(d.bb_low !== null) bbLowData.push({ time: d.time, value: d.bb_low });
+                                if(typeof d.k === "number" && !isNaN(d.k)) kData.push({ time: d.time, value: d.k });
+                                if(typeof d.d === "number" && !isNaN(d.d)) dData.push({ time: d.time, value: d.d });
+                            });
+                            
+                            volumeSeries.setData(volData);
+                            symbolEquitySeries.setData(pnlData);
+                            
+                            // 標注進出場與加減碼
+                            if (portfolio.value && portfolio.value.trades) {
+                                const markers = portfolio.value.trades
+                                    .filter(t => t.symbol === symbol)
+                                    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                                    .map(t => {
+                                        const dateStr = t.timestamp.substring(0, 10);
+                                        return {
+                                            time: dateStr,
+                                            position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
+                                            color: t.action === 'BUY' ? '#3fb950' : '#f85149',
+                                            shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
+                                            text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
+                                        };
+                                    });
+                                candleSeries.setMarkers(markers);
+                            }
+                            smaSeries.setData(smaData);
+                            rsiSeries.setData(rsiData);
+                            bbUpSeries.setData(bbUpData);
+                            bbMidSeries.setData(bbMidData);
+                            bbLowSeries.setData(bbLowData);
+                            kSeries.setData(kData);
+                            dSeries.setData(dData);
+                            macdSeries.setData(macdData);
+                            signalSeries.setData(signalData);
+                            histogramSeries.setData(histData);
+                            
+                            const totalBars = data.length;
+                            if (totalBars > 60) {
+                                chart.timeScale().setVisibleLogicalRange({ from: totalBars - 60, to: totalBars - 1 });
+                            } else {
+                                chart.timeScale().fitContent();
+                            }
+                        } else {
+                            candleSeries.setData([]);
+                        }
+                        connectWebSocket(symbol);
+                            if (costLine) {
+                                candleSeries.removePriceLine(costLine);
+                                costLine = null;
+                            }
+                            const pos = portfolio.value.positions?.find(p => p.symbol === symbol);
+                            if (pos) {
+                                costLine = candleSeries.createPriceLine({
+                                    price: pos.avg_cost,
+                                    color: '#3b82f6',
+                                    lineWidth: 2,
+                                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                                    axisLabelVisible: true,
+                                    title: 'AVG COST',
+                                });
+                            }
+
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
+                };
+
+                
+                const showAddModal = (type) => {
+                    modalType.value = type;
+                    modalForm.symbol = '';
+                    modalForm.name = '';
+                    modalForm.ref_price = 0;
+                    modalForm.shares = 0;
+                    modalForm.price = 0;
+                    modalForm.action = 'BUY';
+                    modalForm.market = 'TW';
+                    modalForm.currency = 'TWD';
+                    
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    modalForm.timestamp = now.toISOString().slice(0,16);
+                };
+
+                const submitModal = async () => {
+                    const endpoint = modalType.value === 'watchlist' ? '/api/watchlist' : '/api/trades';
+                    try {
+                        const res = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(modalForm)
+                        });
+                        const result = await res.json();
+                        showToast(result.message, '✅');
+                        modalType.value = null;
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                const editWatchlist = (item) => {
+                    modalType.value = 'watchlist';
+                    modalForm.symbol = item.symbol;
+                    modalForm.name = item.name;
+                    modalForm.ref_price = item.ref_price;
+                };
+
+                
+
+                const delWatchlist = async (symbol) => {
+                    try {
+                        const res = await fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' });
+                        const result = await res.json();
+                        showToast(result.message, '🗑️');
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                const delTrade = async (id) => {
+                    try {
+                        const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+                        const result = await res.json();
+                        showToast(result.message, '🗑️');
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); }
+                };
+
+                const fetchPortfolio = async () => {
+                    try {
+                        const res = await fetch('/api/portfolio');
+                        const data = await res.json();
+                        // 加上 flashClass 給 vue 綁定動畫
+                        data.watchlist.forEach(i => i.flashClass = '');
+                        portfolio.value = data;
+                        if(data.settings) {
+                            settings.take_profit_pct = data.settings.take_profit_pct;
+                            settings.stop_loss_pct = data.settings.stop_loss_pct;
+                        }
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
+                };
+
+                const saveSettings = async () => {
+                    try {
+                        const res = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(settings)
+                        });
+                        const result = await res.json();
+                        showToast(result.message, '⚙️');
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
+                };
+
+                const sendAction = async (actionType) => {
+                    try {
+                        const res = await fetch('/api/action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: actionType })
+                        });
+                        const result = await res.json();
+                        let icon = '⚡️';
+                        if(actionType === 'halt') icon = '🚨';
+                        if(actionType === 'resume') icon = '▶️';
+                        showToast(result.message, icon);
+                        fetchPortfolio();
+                    } catch(e) { console.error(e); showToast('Chart Error: ' + e.message + ' ' + e.stack, '❌'); }
+                };
+                Vue.watch(mobileView, (newVal) => {
+                    if (newVal === 'chart' && chart) {
+                        setTimeout(() => {
+                            const container = document.getElementById('tvchart');
+                            if (container) {
+                                chart.resize(container.clientWidth, container.clientHeight);
+                                chart.timeScale().fitContent();
+                            }
+                        }, 100);
+                    }
+                });
+                onMounted(() => {
+                    initChart();
+                    fetchPortfolio().then(() => {
+                        loadChart(currentSymbol.value);
+                    });
+                });
+
+                return {
+                    portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, mobileView, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
+                    toastMessage, toastIcon, wsConnected
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
