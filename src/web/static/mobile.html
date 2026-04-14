@@ -392,6 +392,22 @@
         </div>
     </div>
 
+
+    <!-- Mobile Bottom Nav -->
+    <div class="h-14 bg-gray-900 border-t border-gray-800 flex justify-around items-center text-xs shrink-0 w-full pb-safe">
+        <button @click="mobileView = 'list'" :class="mobileView === 'list' ? 'text-blue-400' : 'text-gray-500'" class="flex flex-col items-center p-2 w-1/3">
+            <span class="text-lg mb-1">📋</span>
+            <span>清單</span>
+        </button>
+        <button @click="mobileView = 'chart'" :class="mobileView === 'chart' ? 'text-blue-400' : 'text-gray-500'" class="flex flex-col items-center p-2 w-1/3 border-l border-gray-800">
+            <span class="text-lg mb-1">📈</span>
+            <span>圖表</span>
+        </button>
+        <button @click="mobileView = 'agent'" :class="mobileView === 'agent' ? 'text-blue-400' : 'text-gray-500'" class="flex flex-col items-center p-2 w-1/3 border-l border-gray-800">
+            <span class="text-lg mb-1">🤖</span>
+            <span>控制台</span>
+        </button>
+    </div>
 </div>
 
     <script>
