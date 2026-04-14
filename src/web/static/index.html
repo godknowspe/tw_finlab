@@ -324,7 +324,7 @@
     </div>
 
     <!-- 右側邊欄：控制台 -->
-    <div class="w-72 panel-bg border-l border-line flex flex-col">
+    <div v-show="showRightPanel" class="w-72 panel-bg border-l border-line flex flex-col">
         <div class="p-4 border-b border-line flex items-center gap-2">
             <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
@@ -401,6 +401,7 @@
                 const settings = reactive({ take_profit_pct: 10, stop_loss_pct: 5 });
                 const currentSymbol = ref('2330');
                 const currentInterval = ref('1d');
+                const showRightPanel = ref(true);
                 const activeTab = ref('watchlist');
                 const chartMode = ref('symbol');
                 const analysisData = ref([]);
@@ -719,12 +720,16 @@
                         console.error("Failed to load analysis:", e);
                     }
                 };
-
-                
                 const changeInterval = (inv) => {
                     currentInterval.value = inv;
+                    if (chart) {
+                        chart.applyOptions({
+                            timeScale: { timeVisible: inv === '60m' }
+                        });
+                    }
                     loadChart(currentSymbol.value);
                 };
+
 
                 const loadChart = async (symbol) => {
                     if (chartMode.value !== 'symbol') {
@@ -825,7 +830,12 @@
                             signalSeries.setData(signalData);
                             histogramSeries.setData(histData);
                             
-                            chart.timeScale().fitContent();
+                            const totalBars = data.length;
+                            if (totalBars > 60) {
+                                chart.timeScale().setVisibleLogicalRange({ from: totalBars - 60, to: totalBars - 1 });
+                            } else {
+                                chart.timeScale().fitContent();
+                            }
                         } else {
                             candleSeries.setData([]);
                         }

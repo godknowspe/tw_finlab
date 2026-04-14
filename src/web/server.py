@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -42,7 +42,15 @@ class ActionRequest(BaseModel):
     action: str
 
 @app.get("/")
-async def root():
+async def root(request: Request):
+    user_agent = request.headers.get("user-agent", "").lower()
+    is_mobile = any(mobile_os in user_agent for mobile_os in ["android", "iphone", "ipad", "mobile"])
+    
+    if is_mobile:
+        mobile_path = os.path.join(static_dir, "mobile.html")
+        if os.path.exists(mobile_path):
+            return FileResponse(mobile_path)
+            
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/api/kbars/{stock_id}")
@@ -127,7 +135,9 @@ def get_kbars(stock_id: str, interval: str = "1d"):
             
             # 針對 lightweight-charts 的格式: 60m 需使用 unix timestamp
             if interval == '60m':
-                chart_time = int(index.timestamp())
+                # Lightweight Charts 預設以 UTC 顯示 timestamp
+                # 所以我們把台灣時間當作 UTC 傳過去 (直接加上 28800 秒的 offset)
+                chart_time = int(index.timestamp()) + 28800
             else:
                 chart_time = current_date_str
             

@@ -60,11 +60,11 @@ def calculate_trade_analysis(trades):
                     # hold period dataframe
                     hold_df = df[(df.index >= b["date"]) & (df.index <= sell_date)]
                     if not hold_df.empty:
-                        period_high = hold_df['high'].max()
-                        period_low = hold_df['low'].min()
+                        period_high = max(hold_df['high'].max(), b["price"], sell_price)
+                        period_low = min(hold_df['low'].min(), b["price"], sell_price)
                     else:
-                        period_high = sell_price
-                        period_low = b["price"]
+                        period_high = max(b["price"], sell_price)
+                        period_low = min(b["price"], sell_price)
                         
                     mae = (period_low - b["price"]) / b["price"] * 100
                     mfe = (period_high - b["price"]) / b["price"] * 100
@@ -72,6 +72,8 @@ def calculate_trade_analysis(trades):
                     spread = period_high - period_low
                     if spread > 0:
                         efficiency = (sell_price - b["price"]) / spread * 100
+                        # Cap it between 0 and 100, though theoretically it shouldn't exceed now
+                        efficiency = max(0.0, min(100.0, efficiency))
                     else:
                         efficiency = 0.0
                         
