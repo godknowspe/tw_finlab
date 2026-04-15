@@ -392,11 +392,11 @@ def perform_action(req: ActionRequest):
 @app.get("/api/equity")
 def get_equity():
     import random
+    random.seed(42)
     today = datetime.date.today()
     result = []
     base_value = 1000000.0
     
-    # 產生 10 年的假淨值資料 (約 3650 天)
     for i in range(3650, -1, -1):
         dt = today - datetime.timedelta(days=i)
         if dt.weekday() >= 5:
