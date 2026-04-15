@@ -657,13 +657,14 @@
                                 areaSeries.setData(data);
                                 
                                 const totalBars = data.length;
-                                setTimeout(() => {
-                                    if (totalBars > 252) {
-                                        chart.timeScale().setVisibleLogicalRange({ from: totalBars - 252, to: totalBars - 1 });
-                                    } else {
-                                        chart.timeScale().fitContent();
-                                    }
-                                }, 50);
+                                if (totalBars > 252) {
+                                    chart.timeScale().setVisibleRange({
+                                        from: data[totalBars - 252].time,
+                                        to: data[totalBars - 1].time
+                                    });
+                                } else {
+                                    chart.timeScale().fitContent();
+                                }
                                 
                                 equityValue.value = data[data.length - 1].value;
                             }
@@ -846,7 +847,10 @@
                             
                             const totalBars = data.length;
                             if (totalBars > 60) {
-                                chart.timeScale().setVisibleLogicalRange({ from: totalBars - 60, to: totalBars - 1 });
+                                chart.timeScale().setVisibleRange({
+                                    from: data[totalBars - 60].time,
+                                    to: data[totalBars - 1].time
+                                });
                             } else {
                                 chart.timeScale().fitContent();
                             }

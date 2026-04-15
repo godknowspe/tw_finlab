@@ -671,7 +671,10 @@
                                 
                                 const totalBars = data.length;
                                 if (totalBars > 252) {
-                                    chart.timeScale().setVisibleLogicalRange({ from: totalBars - 252, to: totalBars - 1 });
+                                    chart.timeScale().setVisibleRange({
+                                        from: data[totalBars - 252].time,
+                                        to: data[totalBars - 1].time
+                                    });
                                 } else {
                                     chart.timeScale().fitContent();
                                 }
@@ -857,7 +860,10 @@
                             
                             const totalBars = data.length;
                             if (totalBars > 60) {
-                                chart.timeScale().setVisibleLogicalRange({ from: totalBars - 60, to: totalBars - 1 });
+                                chart.timeScale().setVisibleRange({
+                                    from: data[totalBars - 60].time,
+                                    to: data[totalBars - 1].time
+                                });
                             } else {
                                 chart.timeScale().fitContent();
                             }
