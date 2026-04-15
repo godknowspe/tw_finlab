@@ -668,7 +668,14 @@
                             const data = await res.json();
                             if(data && data.length > 0) {
                                 areaSeries.setData(data);
-                                chart.timeScale().fitContent();
+                                
+                                const totalBars = data.length;
+                                if (totalBars > 252) {
+                                    chart.timeScale().setVisibleLogicalRange({ from: totalBars - 252, to: totalBars - 1 });
+                                } else {
+                                    chart.timeScale().fitContent();
+                                }
+                                
                                 equityValue.value = data[data.length - 1].value;
                             }
                         } catch(e) { console.error(e); }
