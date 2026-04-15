@@ -575,7 +575,9 @@
                             return;
                         }
 
-                        const priceData = param.seriesData.get(candleSeries);
+                        if (!param.seriesPrices) return;
+                        
+                        const priceData = param.seriesPrices.get(candleSeries);
                         if (!priceData) {
                             legend.classList.add('hidden');
                             return;
@@ -585,43 +587,43 @@
                         
                         let html = `<div class="text-white font-bold mb-1">${currentSymbol.value}</div>`;
                         
-                        const O = priceData.open.toFixed(2);
-                        const H = priceData.high.toFixed(2);
-                        const L = priceData.low.toFixed(2);
-                        const C = priceData.close.toFixed(2);
-                        const isUp = priceData.close >= priceData.open;
+                        const O = priceData.open !== undefined ? priceData.open.toFixed(2) : priceData.toFixed(2);
+                        const H = priceData.high !== undefined ? priceData.high.toFixed(2) : priceData.toFixed(2);
+                        const L = priceData.low !== undefined ? priceData.low.toFixed(2) : priceData.toFixed(2);
+                        const C = priceData.close !== undefined ? priceData.close.toFixed(2) : priceData.toFixed(2);
+                        const isUp = (priceData.close !== undefined ? priceData.close : priceData) >= (priceData.open !== undefined ? priceData.open : priceData);
                         const colorClass = isUp ? 'text-green-400' : 'text-red-400';
                         
                         html += `<div class="flex gap-2"><span>O <span class="${colorClass}">${O}</span></span><span>H <span class="${colorClass}">${H}</span></span><span>L <span class="${colorClass}">${L}</span></span><span>C <span class="${colorClass}">${C}</span></span></div>`;
 
                         if (showVOL.value && volumeSeries) {
-                            const volData = param.seriesData.get(volumeSeries);
-                            if (volData) html += `<div>VOL <span class="text-gray-300">${volData.value.toLocaleString()}</span></div>`;
+                            const vol = param.seriesPrices.get(volumeSeries);
+                            if (vol !== undefined) html += `<div>VOL <span class="text-gray-300">${Number(vol).toLocaleString()}</span></div>`;
                         }
                         if (showSMA.value && smaSeries) {
-                            const sma = param.seriesData.get(smaSeries);
-                            if (sma) html += `<div>SMA20 <span class="text-purple-400">${sma.value.toFixed(2)}</span></div>`;
+                            const sma = param.seriesPrices.get(smaSeries);
+                            if (sma !== undefined) html += `<div>SMA20 <span class="text-purple-400">${Number(sma).toFixed(2)}</span></div>`;
                         }
                         if (showBB.value && bbUpSeries && bbMidSeries && bbLowSeries) {
-                            const up = param.seriesData.get(bbUpSeries);
-                            const mid = param.seriesData.get(bbMidSeries);
-                            const low = param.seriesData.get(bbLowSeries);
-                            if (up && mid && low) html += `<div>BB <span class="text-cyan-400">${up.value.toFixed(2)} | ${mid.value.toFixed(2)} | ${low.value.toFixed(2)}</span></div>`;
+                            const up = param.seriesPrices.get(bbUpSeries);
+                            const mid = param.seriesPrices.get(bbMidSeries);
+                            const low = param.seriesPrices.get(bbLowSeries);
+                            if (up !== undefined && mid !== undefined && low !== undefined) html += `<div>BB <span class="text-cyan-400">${Number(up).toFixed(2)} | ${Number(mid).toFixed(2)} | ${Number(low).toFixed(2)}</span></div>`;
                         }
                         if (showMACD.value && macdSeries && signalSeries && histogramSeries) {
-                            const m = param.seriesData.get(macdSeries);
-                            const s = param.seriesData.get(signalSeries);
-                            const h = param.seriesData.get(histogramSeries);
-                            if (m && s && h) html += `<div>MACD <span class="text-orange-400">${m.value.toFixed(2)} | ${s.value.toFixed(2)} | ${h.value.toFixed(2)}</span></div>`;
+                            const m = param.seriesPrices.get(macdSeries);
+                            const s = param.seriesPrices.get(signalSeries);
+                            const h = param.seriesPrices.get(histogramSeries);
+                            if (m !== undefined && s !== undefined && h !== undefined) html += `<div>MACD <span class="text-orange-400">${Number(m).toFixed(2)} | ${Number(s).toFixed(2)} | ${Number(h).toFixed(2)}</span></div>`;
                         }
                         if (showRSI.value && rsiSeries) {
-                            const r = param.seriesData.get(rsiSeries);
-                            if (r) html += `<div>RSI <span class="text-pink-400">${r.value.toFixed(2)}</span></div>`;
+                            const r = param.seriesPrices.get(rsiSeries);
+                            if (r !== undefined) html += `<div>RSI <span class="text-pink-400">${Number(r).toFixed(2)}</span></div>`;
                         }
                         if (showKD.value && kSeries && dSeries) {
-                            const k = param.seriesData.get(kSeries);
-                            const d = param.seriesData.get(dSeries);
-                            if (k && d) html += `<div>KD <span class="text-yellow-400">${k.value.toFixed(2)} | ${d.value.toFixed(2)}</span></div>`;
+                            const k = param.seriesPrices.get(kSeries);
+                            const d = param.seriesPrices.get(dSeries);
+                            if (k !== undefined && d !== undefined) html += `<div>KD <span class="text-yellow-400">${Number(k).toFixed(2)} | ${Number(d).toFixed(2)}</span></div>`;
                         }
                         
                         legend.innerHTML = html;
