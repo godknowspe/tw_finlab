@@ -195,7 +195,8 @@
                 </button>
             </div>
         </div>
-                <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
+        <div class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
+            <div id="tvchart" class="absolute inset-0"></div>
             <div id="chart-legend" class="absolute top-2 left-2 z-10 p-2 pointer-events-none text-xs font-mono space-y-1 bg-gray-900/80 rounded border border-gray-700 hidden"></div>
         </div>
         

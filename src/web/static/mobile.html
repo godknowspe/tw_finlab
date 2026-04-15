@@ -192,7 +192,8 @@
                 <button @click="toggleIndicator('kd')" :class="showKD ? 'bg-yellow-900 text-yellow-300 border-yellow-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">KD</button>
             </div>
         </div>
-                <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
+        <div class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
+            <div id="tvchart" class="absolute inset-0"></div>
             <div id="chart-legend" class="absolute top-2 left-2 z-10 p-2 pointer-events-none text-[10px] font-mono space-y-1 bg-gray-900/80 rounded border border-gray-700 hidden"></div>
         </div>
         
