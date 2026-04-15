@@ -195,7 +195,9 @@
                 </button>
             </div>
         </div>
-        <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'"></div>
+                <div id="tvchart" class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
+            <div id="chart-legend" class="absolute top-2 left-2 z-10 p-2 pointer-events-none text-xs font-mono space-y-1 bg-gray-900/80 rounded border border-gray-700 hidden"></div>
+        </div>
         
         
         <div id="analysis-container" class="flex-1 w-full overflow-y-auto p-4" v-show="chartMode === 'analysis'">
@@ -459,7 +461,7 @@
                         autoSize: true,
                         layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
                         grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
-                        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                        crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
                         rightPriceScale: { borderColor: '#30363d' },
                         timeScale: { borderColor: '#30363d', timeVisible: true },
                     });
@@ -544,10 +546,73 @@
                     kSeries = chart.addLineSeries({ color: '#facc15', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     dSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-
                     window.addEventListener('resize', () => {
                         chart.resize(container.clientWidth, container.clientHeight);
                     });
+                    
+                    const legend = document.getElementById('chart-legend');
+                    chart.subscribeCrosshairMove(param => {
+                        if (chartMode.value !== 'symbol') {
+                            legend.classList.add('hidden');
+                            return;
+                        }
+                        if (param.point === undefined || !param.time || param.point.x < 0 || param.point.x > container.clientWidth || param.point.y < 0 || param.point.y > container.clientHeight) {
+                            legend.classList.add('hidden');
+                            return;
+                        }
+
+                        const priceData = param.seriesData.get(candleSeries);
+                        if (!priceData) {
+                            legend.classList.add('hidden');
+                            return;
+                        }
+                        
+                        legend.classList.remove('hidden');
+                        
+                        let html = `<div class="text-white font-bold mb-1">${currentSymbol.value}</div>`;
+                        
+                        const O = priceData.open.toFixed(2);
+                        const H = priceData.high.toFixed(2);
+                        const L = priceData.low.toFixed(2);
+                        const C = priceData.close.toFixed(2);
+                        const isUp = priceData.close >= priceData.open;
+                        const colorClass = isUp ? 'text-green-400' : 'text-red-400';
+                        
+                        html += `<div class="flex gap-2"><span>O <span class="${colorClass}">${O}</span></span><span>H <span class="${colorClass}">${H}</span></span><span>L <span class="${colorClass}">${L}</span></span><span>C <span class="${colorClass}">${C}</span></span></div>`;
+
+                        if (showVOL.value && volumeSeries) {
+                            const volData = param.seriesData.get(volumeSeries);
+                            if (volData) html += `<div>VOL <span class="text-gray-300">${volData.value.toLocaleString()}</span></div>`;
+                        }
+                        if (showSMA.value && smaSeries) {
+                            const sma = param.seriesData.get(smaSeries);
+                            if (sma) html += `<div>SMA20 <span class="text-purple-400">${sma.value.toFixed(2)}</span></div>`;
+                        }
+                        if (showBB.value && bbUpSeries && bbMidSeries && bbLowSeries) {
+                            const up = param.seriesData.get(bbUpSeries);
+                            const mid = param.seriesData.get(bbMidSeries);
+                            const low = param.seriesData.get(bbLowSeries);
+                            if (up && mid && low) html += `<div>BB <span class="text-cyan-400">${up.value.toFixed(2)} | ${mid.value.toFixed(2)} | ${low.value.toFixed(2)}</span></div>`;
+                        }
+                        if (showMACD.value && macdSeries && signalSeries && histogramSeries) {
+                            const m = param.seriesData.get(macdSeries);
+                            const s = param.seriesData.get(signalSeries);
+                            const h = param.seriesData.get(histogramSeries);
+                            if (m && s && h) html += `<div>MACD <span class="text-orange-400">${m.value.toFixed(2)} | ${s.value.toFixed(2)} | ${h.value.toFixed(2)}</span></div>`;
+                        }
+                        if (showRSI.value && rsiSeries) {
+                            const r = param.seriesData.get(rsiSeries);
+                            if (r) html += `<div>RSI <span class="text-pink-400">${r.value.toFixed(2)}</span></div>`;
+                        }
+                        if (showKD.value && kSeries && dSeries) {
+                            const k = param.seriesData.get(kSeries);
+                            const d = param.seriesData.get(dSeries);
+                            if (k && d) html += `<div>KD <span class="text-yellow-400">${k.value.toFixed(2)} | ${d.value.toFixed(2)}</span></div>`;
+                        }
+                        
+                        legend.innerHTML = html;
+                    });
+
                 };
 
                 const connectWebSocket = (symbol) => {
