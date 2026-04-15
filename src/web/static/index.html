@@ -657,11 +657,13 @@
                                 areaSeries.setData(data);
                                 
                                 const totalBars = data.length;
-                                if (totalBars > 252) {
-                                    chart.timeScale().setVisibleLogicalRange({ from: totalBars - 252, to: totalBars - 1 });
-                                } else {
-                                    chart.timeScale().fitContent();
-                                }
+                                setTimeout(() => {
+                                    if (totalBars > 252) {
+                                        chart.timeScale().setVisibleLogicalRange({ from: totalBars - 252, to: totalBars - 1 });
+                                    } else {
+                                        chart.timeScale().fitContent();
+                                    }
+                                }, 50);
                                 
                                 equityValue.value = data[data.length - 1].value;
                             }
