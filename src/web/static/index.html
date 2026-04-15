@@ -613,6 +613,15 @@
                             if (k !== undefined && d !== undefined) html += `<div>KD <span class="text-yellow-400">${Number(k).toFixed(2)} | ${Number(d).toFixed(2)}</span></div>`;
                         }
                         
+                        if (symbolEquitySeries) {
+                            const pnlValue = param.seriesPrices.get(symbolEquitySeries);
+                            if (pnlValue !== undefined && pnlValue !== 0) {
+                                const pnlColor = pnlValue > 0 ? 'text-amber-500' : 'text-red-500';
+                                const sign = pnlValue > 0 ? '+' : '';
+                                html += `<div class="mt-1 pt-1 border-t border-gray-700">PnL: <span class="${pnlColor} font-bold">${sign}${Number(pnlValue).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>`;
+                            }
+                        }
+                        
                         legend.innerHTML = html;
                     });
 
