@@ -86,16 +86,23 @@
                      :class="currentSymbol === pos.symbol ? 'bg-gray-800' : ''"
                      @click="loadChart(pos.symbol)">
                     <div>
-                        <div class="font-bold text-white flex items-center gap-2 group">
+                        <div class="font-bold text-white flex items-center gap-2 group mb-1">
                             <span class="text-[10px] px-1 rounded bg-gray-700" :class="pos.market === 'US' ? 'text-blue-300' : 'text-gray-400'">{{ pos.market === 'US' ? '🇺🇸' : '🇹🇼' }}</span>
                             {{ pos.symbol }}
                         </div>
-                        <div class="text-xs text-blue-400 font-mono">{{ pos.shares }} 股</div>
+                        <div class="text-xs text-blue-400 font-mono flex items-center gap-1">
+                            {{ pos.shares.toLocaleString() }} <span class="text-[10px] text-gray-500">x</span> {{ pos.avg_cost.toFixed(2) }}
+                        </div>
+                        <div class="text-xs text-gray-400 font-mono mt-0.5">
+                            Cost: {{ (pos.shares * pos.avg_cost).toLocaleString(undefined, {maximumFractionDigits:0}) }} {{ pos.currency }}
+                        </div>
                     </div>
-                    <div class="text-right">
-                        <div class="text-xs text-gray-400 font-mono">@{{ pos.avg_cost.toFixed(2) }} <span class="text-[9px]">{{ pos.currency }}</span></div>
-                        <div class="text-sm font-mono font-bold" :class="pos.unrealized >= 0 ? 'text-green' : 'text-red'">
-                            {{ pos.unrealized > 0 ? '+' : '' }}{{ pos.unrealized.toLocaleString() }}
+                    <div class="text-right flex flex-col justify-center">
+                        <div class="text-sm font-mono font-bold mb-0.5" :class="pos.unrealized >= 0 ? 'text-green' : 'text-red'">
+                            {{ pos.unrealized > 0 ? '+' : '' }}{{ pos.unrealized.toLocaleString(undefined, {maximumFractionDigits:0}) }}
+                        </div>
+                        <div class="text-xs font-mono font-bold" :class="pos.unrealized >= 0 ? 'text-green' : 'text-red'">
+                            ({{ pos.unrealized > 0 ? '+' : '' }}{{ ((pos.unrealized / (pos.shares * pos.avg_cost)) * 100).toFixed(2) }}%)
                         </div>
                     </div>
                 </div>
