@@ -12,11 +12,43 @@ import random
 
 app = FastAPI(title="TW FinLab Quant Dashboard")
 
+STATE_FILE = os.path.join(os.path.dirname(__file__), "app_state.json")
+
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-app_state = {
-    "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
+def load_app_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
+        "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
+        "watchlist": [
+            {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
+            {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00, "market": "TW"},
+            {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"},
+            {"symbol": "^TWII", "name": "Taiwan Weighted Index", "ref_price": 20000.0, "market": "TW"}
+        ],
+        "cash": {
+            "TWD": 10000000.0,
+            "USD": 50000.0
+        },
+        "trades": [
+            {"id": 1, "symbol": "2330", "action": "BUY", "shares": 2000, "price": 1550.00, "timestamp": "2026-02-01T10:00:00", "currency": "TWD"},
+            {"id": 2, "symbol": "AAPL", "action": "BUY", "shares": 100, "price": 175.50, "timestamp": "2026-03-05T10:00:00", "currency": "USD"},
+            {"id": 3, "symbol": "2330", "action": "SELL", "shares": 1000, "price": 1850.00, "timestamp": "2026-04-01T10:00:00", "currency": "TWD"}
+        ]
+    }
+
+def save_app_state(state):
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=4)
+
+app_state = load_app_state(),
     "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
     "watchlist": [
         {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
@@ -372,11 +404,13 @@ class TradeItem(BaseModel):
 def add_watchlist(item: WatchlistItem):
     if not any(w["symbol"] == item.symbol for w in app_state["watchlist"]):
         app_state["watchlist"].append({"symbol": item.symbol, "name": item.name, "ref_price": item.ref_price, "market": item.market})
+    save_app_state(app_state)
     return {"status": "success", "message": f"{item.symbol} 已加入自選股！"}
 
 @app.delete("/api/watchlist/{symbol}")
 def del_watchlist(symbol: str):
     app_state["watchlist"] = [w for w in app_state["watchlist"] if w["symbol"] != symbol]
+    save_app_state(app_state)
     return {"status": "success", "message": f"{symbol} 已從自選股移除！"}
 
 @app.post("/api/trades")
@@ -400,11 +434,13 @@ def add_trade(item: TradeItem):
     }
     app_state["trades"].append(new_trade)
     action_cht = "買進" if new_trade["action"] == "BUY" else "賣出"
+    save_app_state(app_state)
     return {"status": "success", "message": f"成功新增交易：{action_cht} {item.symbol} {item.shares}股 @ {item.price}"}
 
 @app.delete("/api/trades/{trade_id}")
 def del_trade(trade_id: int):
     app_state["trades"] = [t for t in app_state["trades"] if t["id"] != trade_id]
+    save_app_state(app_state)
     return {"status": "success", "message": f"已刪除交易紀錄 #{trade_id}！"}
 
 
@@ -412,6 +448,7 @@ def del_trade(trade_id: int):
 def update_settings(settings: SettingsUpdate):
     app_state["settings"]["take_profit_pct"] = settings.take_profit_pct
     app_state["settings"]["stop_loss_pct"] = settings.stop_loss_pct
+    save_app_state(app_state)
     return {"status": "success", "message": "策略參數已更新！"}
 
 @app.post("/api/action")
@@ -421,11 +458,13 @@ def perform_action(req: ActionRequest):
         app_state["agent_state"]["halted"] = True
         app_state["agent_state"]["phase"] = "HALTED"
         app_state["agent_state"]["exposure"] = "0%"
-        return {"status": "success", "message": "🚨 緊急停止已觸發，部位已清空！"}
+        save_app_state(app_state)
+    return {"status": "success", "message": "🚨 緊急停止已觸發，部位已清空！"}
     elif action == "resume":
         app_state["agent_state"]["halted"] = False
         app_state["agent_state"]["phase"] = "Monitoring"
-        return {"status": "success", "message": "✅ 系統已恢復自動交易。"}
+        save_app_state(app_state)
+    return {"status": "success", "message": "✅ 系統已恢復自動交易。"}
     elif action == "execute":
         return {"status": "success", "message": "⚡️ 已強制發送執行訊號！"}
     return {"status": "error", "message": "未知的指令"}
