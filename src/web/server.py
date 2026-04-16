@@ -48,24 +48,7 @@ def save_app_state(state):
     with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, indent=4)
 
-app_state = load_app_state(),
-    "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
-    "watchlist": [
-        {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
-        {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00, "market": "TW"},
-        {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"},
-        {"symbol": "^TWII", "name": "Taiwan Weighted Index", "ref_price": 20000.0, "market": "TW"}
-    ],
-    "cash": {
-        "TWD": 10000000.0,
-        "USD": 50000.0
-    },
-    "trades": [
-        {"id": 1, "symbol": "2330", "action": "BUY", "shares": 2000, "price": 1550.00, "timestamp": "2026-02-01T10:00:00", "currency": "TWD"},
-        {"id": 2, "symbol": "AAPL", "action": "BUY", "shares": 100, "price": 175.50, "timestamp": "2026-03-05T10:00:00", "currency": "USD"},
-        {"id": 3, "symbol": "2330", "action": "SELL", "shares": 1000, "price": 1850.00, "timestamp": "2026-04-01T10:00:00", "currency": "TWD"}
-    ]
-}
+app_state = load_app_state()
 
 class SettingsUpdate(BaseModel):
     take_profit_pct: float
@@ -459,13 +442,14 @@ def perform_action(req: ActionRequest):
         app_state["agent_state"]["phase"] = "HALTED"
         app_state["agent_state"]["exposure"] = "0%"
         save_app_state(app_state)
-    return {"status": "success", "message": "🚨 緊急停止已觸發，部位已清空！"}
+        return {"status": "success", "message": "🚨 緊急停止已觸發，部位已清空！"}
     elif action == "resume":
         app_state["agent_state"]["halted"] = False
         app_state["agent_state"]["phase"] = "Monitoring"
         save_app_state(app_state)
-    return {"status": "success", "message": "✅ 系統已恢復自動交易。"}
+        return {"status": "success", "message": "✅ 系統已恢復自動交易。"}
     elif action == "execute":
+        save_app_state(app_state)
         return {"status": "success", "message": "⚡️ 已強制發送執行訊號！"}
     return {"status": "error", "message": "未知的指令"}
 
