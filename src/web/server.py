@@ -195,11 +195,45 @@ def get_portfolio():
     usd_twd_rate = 32.5
     
     latest_prices = {}
+    import yfinance as yf
     
+    # Collect all unique symbols to fetch
+    all_syms = set([item["symbol"] for item in app_state["watchlist"]])
+    for t in app_state["trades"]:
+        all_syms.add(t["symbol"])
+        
+    yf_syms = []
+    sym_mapping = {}
+    for s in all_syms:
+        yf_s = f"{s}.TW" if s.isdigit() else s
+        yf_syms.append(yf_s)
+        sym_mapping[yf_s] = s
+        
+    # Batch download latest prices (use 5d to ensure we get the last valid close)
+    if yf_syms:
+        try:
+            df_yf = yf.download(yf_syms, period="5d", progress=False)
+            if not df_yf.empty:
+                for yf_s in yf_syms:
+                    try:
+                        # Handle both MultiIndex and single-level column cases
+                        if isinstance(df_yf.columns, pd.MultiIndex):
+                            valid_closes = df_yf['Close'][yf_s].dropna()
+                        else:
+                            valid_closes = df_yf['Close'].dropna()
+                        
+                        if not valid_closes.empty:
+                            latest_prices[sym_mapping[yf_s]] = float(valid_closes.iloc[-1])
+                    except Exception as inner_e:
+                        print(f"Error parsing price for {yf_s}:", inner_e)
+        except Exception as e:
+            print("yfinance fetch error:", e)
+            
     enriched_watchlist = []
     for item in app_state["watchlist"]:
         sym = item["symbol"]
         if sym not in latest_prices:
+            # Fallback to local DB
             df = get_stock_data_df(sym, start_date)
             latest_prices[sym] = float(df.iloc[-1]['close']) if not df.empty else item["ref_price"]
             
