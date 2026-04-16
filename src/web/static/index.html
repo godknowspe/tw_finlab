@@ -1066,6 +1066,8 @@
                     initChart();
                     fetchPortfolio().then(() => {
                         loadChart(currentSymbol.value);
+                        // 每 30 秒自動更新一次左側清單真實報價
+                        setInterval(fetchPortfolio, 30000);
                     });
                 });
 
