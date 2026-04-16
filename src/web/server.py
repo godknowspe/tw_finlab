@@ -84,7 +84,9 @@ def get_kbars(stock_id: str, interval: str = "1d"):
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
         
-        # 計算 SMA 20
+        # 計算 SMA (5, 10, 20)
+        df['sma5'] = df['close'].rolling(window=5).mean()
+        df['sma10'] = df['close'].rolling(window=10).mean()
         df['sma20'] = df['close'].rolling(window=20).mean()
         
         # 計算 MACD (Fast=12, Slow=26, Signal=9)
@@ -170,6 +172,8 @@ def get_kbars(stock_id: str, interval: str = "1d"):
                 "low": safe_float(row['low']),
                 "close": close_price,
                 "value": safe_float(row['volume']),
+                "sma5": safe_float(row.get('sma5')),
+                "sma10": safe_float(row.get('sma10')),
                 "sma20": safe_float(row['sma20']),
                 "macd": safe_float(row['macd']),
                 "signal": safe_float(row['signal']),

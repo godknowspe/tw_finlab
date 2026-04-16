@@ -174,7 +174,7 @@
 
                 <div v-if="chartMode === 'symbol'" class="flex gap-2 ml-4">
                     <button @click="toggleIndicator('vol')" :class="showVOL ? 'bg-blue-900 text-blue-300 border-blue-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">VOL</button>
-                    <button @click="toggleIndicator('sma')" :class="showSMA ? 'bg-purple-900 text-purple-300 border-purple-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">SMA20</button>
+                    <button @click="toggleIndicator('sma')" :class="showSMA ? 'bg-purple-900 text-purple-300 border-purple-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">SMA</button>
                     <button @click="toggleIndicator('macd')" :class="showMACD ? 'bg-orange-900 text-orange-300 border-orange-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">MACD</button>
                     <button @click="toggleIndicator('rsi')" :class="showRSI ? 'bg-pink-900 text-pink-300 border-pink-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">RSI</button>
                     <button @click="toggleIndicator('bb')" :class="showBB ? 'bg-cyan-900 text-cyan-300 border-cyan-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-0.5 text-xs rounded border transition-colors">BB</button>
@@ -437,6 +437,8 @@
                 let candleSeries = null;
                 let symbolEquitySeries = null;
                 let areaSeries = null;
+                let sma5Series = null;
+                let sma10Series = null;
                 let smaSeries = null;
                 let macdSeries = null;
                 let signalSeries = null;
@@ -499,6 +501,18 @@
                     // Initially hide equity curve
                     areaSeries.applyOptions({ visible: false });
                     
+                    sma5Series = chart.addLineSeries({
+                        color: '#f472b6', // pink-400
+                        lineWidth: 1.5,
+                        priceScaleId: 'right',
+                        visible: false,
+                    });
+                    sma10Series = chart.addLineSeries({
+                        color: '#38bdf8', // sky-400
+                        lineWidth: 1.5,
+                        priceScaleId: 'right',
+                        visible: false,
+                    });
                     smaSeries = chart.addLineSeries({
                         color: '#c084fc', // purple-400
                         lineWidth: 2,
@@ -597,8 +611,14 @@
                             if (vol !== undefined) html += `<div>VOL <span class="text-gray-300">${Number(vol).toLocaleString()}</span></div>`;
                         }
                         if (showSMA.value && smaSeries) {
-                            const sma = param.seriesPrices.get(smaSeries);
-                            if (sma !== undefined) html += `<div>SMA20 <span class="text-purple-400">${Number(sma).toFixed(2)}</span></div>`;
+                            const s5 = sma5Series ? param.seriesPrices.get(sma5Series) : undefined;
+                            const s10 = sma10Series ? param.seriesPrices.get(sma10Series) : undefined;
+                            const s20 = param.seriesPrices.get(smaSeries);
+                            if (s5 !== undefined && s10 !== undefined && s20 !== undefined) {
+                                html += `<div>SMA <span class="text-pink-400">${Number(s5).toFixed(2)}</span> | <span class="text-sky-400">${Number(s10).toFixed(2)}</span> | <span class="text-purple-400">${Number(s20).toFixed(2)}</span></div>`;
+                            } else if (s20 !== undefined) {
+                                html += `<div>SMA20 <span class="text-purple-400">${Number(s20).toFixed(2)}</span></div>`;
+                            }
                         }
                         if (showBB.value && bbUpSeries && bbMidSeries && bbLowSeries) {
                             const up = param.seriesPrices.get(bbUpSeries);
@@ -702,7 +722,7 @@
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
-                        if(showSMA.value) smaSeries.applyOptions({ visible: true });
+                        if(showSMA.value) { sma5Series.applyOptions({ visible: true }); sma10Series.applyOptions({ visible: true }); smaSeries.applyOptions({ visible: true }); }
                         if(showRSI.value) rsiSeries.applyOptions({ visible: true });
                         if(showBB.value) {
                             bbUpSeries.applyOptions({ visible: true });
@@ -722,6 +742,8 @@
                     } else {
                         candleSeries.applyOptions({ visible: false });
                         volumeSeries.applyOptions({ visible: false });
+                        sma5Series.applyOptions({ visible: false });
+                        sma10Series.applyOptions({ visible: false });
                         smaSeries.applyOptions({ visible: false });
                         rsiSeries.applyOptions({ visible: false });
                         bbUpSeries.applyOptions({ visible: false });
@@ -839,7 +861,7 @@
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
-                        if(showSMA.value) smaSeries.applyOptions({ visible: true });
+                        if(showSMA.value) { sma5Series.applyOptions({ visible: true }); sma10Series.applyOptions({ visible: true }); smaSeries.applyOptions({ visible: true }); }
                         if(showRSI.value) rsiSeries.applyOptions({ visible: true });
                         if(showBB.value) {
                             bbUpSeries.applyOptions({ visible: true });
@@ -864,6 +886,8 @@
                             candleSeries.setData(data);
                             
                             // 準備指標資料
+                            const sma5Data = [];
+                            const sma10Data = [];
                             const smaData = [];
                             const macdData = [];
                             const signalData = [];
@@ -879,7 +903,9 @@
                             const pnlData = [];
                             data.forEach(d => {
                                 if(d.total_pnl !== undefined) pnlData.push({ time: d.time, value: d.total_pnl });
-                                if(d.sma20 !== null) smaData.push({ time: d.time, value: d.sma20 });
+                                if(d.sma5 !== null && d.sma5 !== undefined) sma5Data.push({ time: d.time, value: d.sma5 });
+                                if(d.sma10 !== null && d.sma10 !== undefined) sma10Data.push({ time: d.time, value: d.sma10 });
+                                if(d.sma20 !== null && d.sma20 !== undefined) smaData.push({ time: d.time, value: d.sma20 });
                                 if(d.macd !== null) macdData.push({ time: d.time, value: d.macd });
                                 if(d.signal !== null) signalData.push({ time: d.time, value: d.signal });
                                 if(d.histogram !== null) histData.push({ 
@@ -920,7 +946,9 @@
                                     });
                                 candleSeries.setMarkers(markers);
                             }
-                            smaSeries.setData(smaData);
+                            if(sma5Series) sma5Series.setData(sma5Data);
+                            if(sma10Series) sma10Series.setData(sma10Data);
+                            if(smaSeries) smaSeries.setData(smaData);
                             rsiSeries.setData(rsiData);
                             bbUpSeries.setData(bbUpData);
                             bbMidSeries.setData(bbMidData);
