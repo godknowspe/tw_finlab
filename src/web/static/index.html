@@ -653,7 +653,7 @@
                         
                         if (symbolEquitySeries) {
                             const pnlValue = param.seriesPrices.get(symbolEquitySeries);
-                            if (pnlValue !== undefined && pnlValue !== 0) {
+                            if (pnlValue !== undefined && pnlValue !== null && !isNaN(pnlValue) && pnlData.length > 0) {
                                 const pnlColor = pnlValue > 0 ? 'text-amber-500' : 'text-red-500';
                                 const sign = pnlValue > 0 ? '+' : '';
                                 html += `<div class="mt-1 pt-1 border-t border-gray-700">PnL: <span class="${pnlColor} font-bold">${sign}${Number(pnlValue).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>`;
@@ -911,7 +911,7 @@
                             
                             const pnlData = [];
                             data.forEach(d => {
-                                if(d.total_pnl !== undefined) pnlData.push({ time: d.time, value: d.total_pnl });
+                                if(d.total_pnl !== undefined && d.total_pnl !== null) pnlData.push({ time: d.time, value: d.total_pnl });
                                 if(d.sma5 !== null && d.sma5 !== undefined) sma5Data.push({ time: d.time, value: d.sma5 });
                                 if(d.sma10 !== null && d.sma10 !== undefined) sma10Data.push({ time: d.time, value: d.sma10 });
                                 if(d.sma20 !== null && d.sma20 !== undefined) smaData.push({ time: d.time, value: d.sma20 });

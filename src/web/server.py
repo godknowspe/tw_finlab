@@ -162,8 +162,8 @@ def get_kbars(stock_id: str, interval: str = "1d"):
                 
             close_price = safe_float(row['close'])
             unrealized_pnl = (close_price - avg_cost) * shares if close_price is not None else 0.0
-            total_pnl = realized_pnl + unrealized_pnl
-            pnl_pct = ((close_price - avg_cost) / avg_cost * 100) if (shares > 0 and avg_cost > 0 and close_price is not None) else 0.0
+            total_pnl = realized_pnl + unrealized_pnl if (shares > 0 or realized_pnl != 0) else None
+            pnl_pct = ((close_price - avg_cost) / avg_cost * 100) if (shares > 0 and avg_cost > 0 and close_price is not None) else None
             
             result.append({
                 "time": chart_time,
@@ -184,8 +184,8 @@ def get_kbars(stock_id: str, interval: str = "1d"):
                 "bb_low": safe_float(row.get('bb_low')),
                 "k": safe_float(row.get('k')),
                 "d": safe_float(row.get('d')),
-                "total_pnl": float(total_pnl),
-                "pnl_pct": float(pnl_pct)
+                "total_pnl": float(total_pnl) if total_pnl is not None else None,
+                "pnl_pct": float(pnl_pct) if pnl_pct is not None else None
             })
         return result
     except Exception as e:
