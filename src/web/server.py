@@ -66,8 +66,9 @@ def get_kbars(stock_id: str, interval: str = "1d"):
         if stock_id.isdigit():
             yf_symbol = f"{stock_id}.TW"
             
-        if interval == '60m':
-            df = yf.download(yf_symbol, interval='60m', period='730d', progress=False)
+        if interval in ['15m', '30m', '60m']:
+            period = '730d' if interval == '60m' else '60d'
+            df = yf.download(yf_symbol, interval=interval, period=period, progress=False)
         else:
             df = yf.download(yf_symbol, interval=interval, period='10y', progress=False)
             
@@ -134,7 +135,7 @@ def get_kbars(stock_id: str, interval: str = "1d"):
             current_date_str = index.strftime('%Y-%m-%d')
             
             # 針對 lightweight-charts 的格式: 60m 需使用 unix timestamp
-            if interval == '60m':
+            if interval.endswith('m'):
                 # Lightweight Charts 預設以 UTC 顯示 timestamp
                 # 所以我們把台灣時間當作 UTC 傳過去 (直接加上 28800 秒的 offset)
                 chart_time = int(index.timestamp()) + 28800

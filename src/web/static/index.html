@@ -164,7 +164,9 @@
                 
                 
                 <div v-if="chartMode === 'symbol'" class="flex gap-1 ml-2">
-                    <button @click="changeInterval('60m')" :class="currentInterval === '60m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">60分K</button>
+                    <button @click="changeInterval('15m')" :class="currentInterval === '15m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors shrink-0">15分K</button>
+                    <button @click="changeInterval('30m')" :class="currentInterval === '30m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors shrink-0">30分K</button>
+                    <button @click="changeInterval('60m')" :class="currentInterval === '60m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors shrink-0">60分K</button>
                     <button @click="changeInterval('1d')" :class="currentInterval === '1d' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">日K</button>
                     <button @click="changeInterval('1wk')" :class="currentInterval === '1wk' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">5日K</button>
                     <button @click="changeInterval('1mo')" :class="currentInterval === '1mo' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-2 py-0.5 text-[10px] rounded border border-gray-700 transition-colors">20日K</button>
@@ -471,7 +473,7 @@
                         grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
                         crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
                         rightPriceScale: { borderColor: '#30363d' },
-                        timeScale: { borderColor: '#30363d', timeVisible: true },
+                        timeScale: { borderColor: '#30363d', timeVisible: currentInterval.value.endsWith('m') },
                     });
 
                     symbolEquitySeries = chart.addLineSeries({
@@ -823,7 +825,7 @@
                     currentInterval.value = inv;
                     if (chart) {
                         chart.applyOptions({
-                            timeScale: { timeVisible: inv === '60m' }
+                            timeScale: { timeVisible: inv.endsWith('m') }
                         });
                     }
                     loadChart(currentSymbol.value);
