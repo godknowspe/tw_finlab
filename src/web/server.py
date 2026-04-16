@@ -457,17 +457,24 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str):
     await websocket.accept()
     
     # 抓取最後一筆歷史資料作為基準，若無則給預設值
-    today = datetime.date.today()
-    start_date = (today - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
-    df = get_stock_data_df(stock_id, start_date)
+    import yfinance as yf
+    yf_symbol = f"{stock_id}.TW" if stock_id.isdigit() else stock_id
     
+    try:
+        df = yf.download(yf_symbol, period="5d", progress=False)
+    except:
+        df = pd.DataFrame()
+        
     if not df.empty:
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'}, inplace=True)
+        
         last_row = df.iloc[-1]
         current_open = float(last_row['open'])
         current_high = float(last_row['high'])
         current_low = float(last_row['low'])
         current_close = float(last_row['close'])
-        # 確保 WebSocket 吐出的日期與歷史資料最後一根 K 線完全吻合
         current_time = df.index[-1].strftime('%Y-%m-%d')
     else:
         current_open = current_high = current_low = current_close = 100.0
