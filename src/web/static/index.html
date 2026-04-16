@@ -672,7 +672,7 @@
                     }
                     
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${symbol}`;
+                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${encodeURIComponent(symbol)}`;
                     ws = new WebSocket(wsUrl);
                     
                     ws.onopen = () => {
@@ -889,7 +889,7 @@
                     }
                     currentSymbol.value = symbol;
                     try {
-                        const res = await fetch(`/api/kbars/${symbol}?interval=${currentInterval.value}`);
+                        const res = await fetch(`/api/kbars/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`);
                         const data = await res.json();
                         if(data && data.length > 0) {
                             candleSeries.setData(data);
@@ -1043,7 +1043,7 @@
 
                 const delWatchlist = async (symbol) => {
                     try {
-                        const res = await fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' });
+                        const res = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
                         const result = await res.json();
                         showToast(result.message, '🗑️');
                         fetchPortfolio();
