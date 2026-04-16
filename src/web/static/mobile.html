@@ -181,24 +181,32 @@
                 </div>
             </div>
             
-            <!-- 第 2 列：K線週期 (橫向滑動) -->
-            <div v-if="chartMode === 'symbol'" class="flex gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar pb-1">
-                <button @click="changeInterval('15m')" :class="currentInterval === '15m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">15分K</button>
-                <button @click="changeInterval('30m')" :class="currentInterval === '30m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">30分K</button>
-                <button @click="changeInterval('60m')" :class="currentInterval === '60m' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">60分K</button>
-                <button @click="changeInterval('1d')" :class="currentInterval === '1d' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">日K</button>
-                <button @click="changeInterval('1wk')" :class="currentInterval === '1wk' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">5日K</button>
-                <button @click="changeInterval('1mo')" :class="currentInterval === '1mo' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-500'" class="px-3 py-1 text-xs rounded border border-gray-700 shrink-0">20日K</button>
-            </div>
-            
-            <!-- 第 3 列：技術指標 (橫向滑動) -->
-            <div v-if="chartMode === 'symbol'" class="flex gap-1 overflow-x-auto whitespace-nowrap hide-scrollbar pb-1">
-                <button @click="toggleIndicator('vol')" :class="showVOL ? 'bg-blue-900 text-blue-300 border-blue-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">VOL</button>
-                <button @click="toggleIndicator('sma')" :class="showSMA ? 'bg-purple-900 text-purple-300 border-purple-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">SMA</button>
-                <button @click="toggleIndicator('macd')" :class="showMACD ? 'bg-orange-900 text-orange-300 border-orange-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">MACD</button>
-                <button @click="toggleIndicator('rsi')" :class="showRSI ? 'bg-pink-900 text-pink-300 border-pink-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">RSI</button>
-                <button @click="toggleIndicator('bb')" :class="showBB ? 'bg-cyan-900 text-cyan-300 border-cyan-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">BB</button>
-                <button @click="toggleIndicator('kd')" :class="showKD ? 'bg-yellow-900 text-yellow-300 border-yellow-700' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-3 py-1 text-xs rounded border shrink-0">KD</button>
+            <!-- 第 2 列：下拉選單 (K線與指標) -->
+            <div v-if="chartMode === 'symbol'" class="flex gap-2 items-center pb-1">
+                <select v-model="currentInterval" @change="changeInterval($event.target.value)" class="bg-gray-800 text-gray-300 text-xs border border-gray-700 rounded px-2 py-1.5 flex-1 outline-none cursor-pointer">
+                    <option value="15m">15分K</option>
+                    <option value="30m">30分K</option>
+                    <option value="60m">60分K</option>
+                    <option value="1d">日K (1D)</option>
+                    <option value="1wk">週K (1W)</option>
+                    <option value="1mo">月K (1M)</option>
+                </select>
+                
+                <div class="relative flex-1">
+                    <button @click="showIndicatorMenu = !showIndicatorMenu" class="w-full bg-gray-800 text-gray-300 text-xs border border-gray-700 rounded px-2 py-1.5 outline-none text-left flex justify-between items-center cursor-pointer">
+                        <span>技術指標</span>
+                        <span>▾</span>
+                    </button>
+                    <div v-if="showIndicatorMenu" @click="showIndicatorMenu = false" class="fixed inset-0 z-40"></div>
+                    <div v-show="showIndicatorMenu" class="absolute top-full right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 w-48 flex flex-col overflow-hidden">
+                        <button @click="toggleIndicator('vol')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showVOL ? 'text-blue-400' : 'text-gray-400'"><span>Volume</span><span v-if="showVOL">✓</span></button>
+                        <button @click="toggleIndicator('sma')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showSMA ? 'text-purple-400' : 'text-gray-400'"><span>SMA (5,10,20)</span><span v-if="showSMA">✓</span></button>
+                        <button @click="toggleIndicator('macd')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showMACD ? 'text-orange-400' : 'text-gray-400'"><span>MACD</span><span v-if="showMACD">✓</span></button>
+                        <button @click="toggleIndicator('rsi')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showRSI ? 'text-pink-400' : 'text-gray-400'"><span>RSI</span><span v-if="showRSI">✓</span></button>
+                        <button @click="toggleIndicator('bb')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showBB ? 'text-cyan-400' : 'text-gray-400'"><span>Bollinger Bands</span><span v-if="showBB">✓</span></button>
+                        <button @click="toggleIndicator('kd')" class="px-4 py-3 text-left text-xs hover:bg-gray-700 flex justify-between" :class="showKD ? 'text-yellow-400' : 'text-gray-400'"><span>KD</span><span v-if="showKD">✓</span></button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="flex-1 w-full h-full relative" v-show="chartMode !== 'analysis'">
@@ -469,6 +477,7 @@
                 let kSeries = null;
                 let dSeries = null;
                 const showKD = ref(false);
+                const showIndicatorMenu = ref(false);
                 const modalType = ref(null); // 'watchlist' or 'positions'
                 const modalForm = reactive({ symbol: '', name: '', ref_price: 0, action: 'BUY', shares: 0, price: 0, timestamp: '', market: 'TW', currency: 'TWD' });
 
@@ -1125,7 +1134,7 @@
                 });
 
                 return {
-                    portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, mobileView, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, mobileView, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected
                 }
