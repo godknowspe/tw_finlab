@@ -21,7 +21,8 @@ app_state = {
     "watchlist": [
         {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
         {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00, "market": "TW"},
-        {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"}
+        {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"},
+        {"symbol": "^TWII", "name": "Taiwan Weighted Index", "ref_price": 20000.0, "market": "TW"}
     ],
     "cash": {
         "TWD": 10000000.0,
