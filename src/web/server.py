@@ -45,8 +45,18 @@ def load_app_state():
     }
 
 def save_app_state(state):
-    with open(STATE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(state, f, ensure_ascii=False, indent=4)
+    # Use absolute path to avoid ambiguity with reload
+    abs_path = "/Users/godknows/code/tw_finlab/src/web/app_state.json"
+    print(f"DEBUG: Saving state to {abs_path}")
+    try:
+        # Atomic-ish write: write to temp first then rename
+        tmp_path = abs_path + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=4)
+        os.replace(tmp_path, abs_path)
+        print("DEBUG: Save successful")
+    except Exception as e:
+        print(f"DEBUG: Save failed: {e}")
 
 app_state = load_app_state()
 
