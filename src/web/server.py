@@ -107,6 +107,7 @@ def get_kbars(stock_id: str, interval: str = "1d"):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
             
+        df = df.dropna(subset=['Close'])
         df.index.name = 'date'
         df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
         
@@ -545,7 +546,7 @@ def get_equity():
 # WebSockets endpoint to simulate real-time ticks
 
 @app.websocket("/api/ws/quotes/{stock_id}")
-async def websocket_quotes(websocket: WebSocket, stock_id: str):
+async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = "1d"):
     await websocket.accept()
     
     # 抓取最後一筆歷史資料作為基準，若無則給預設值
@@ -553,7 +554,12 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str):
     yf_symbol = f"{stock_id}.TW" if stock_id.isdigit() else stock_id
     
     try:
-        df = yf.download(yf_symbol, period="5d", progress=False)
+        if interval.endswith('m'): p = '60d'
+        elif interval == '1wk': p = '3mo'
+        elif interval == '1mo': p = '1y'
+        else: p = '5d'
+        df = yf.download(yf_symbol, interval=interval, period=p, progress=False)
+        df = df.dropna(subset=['Close'])
     except Exception as e:
         print("YF ERROR:", e)
         df = pd.DataFrame()
@@ -568,7 +574,14 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str):
         current_high = float(last_row['high'])
         current_low = float(last_row['low'])
         current_close = float(last_row['close'])
-        current_time = df.index[-1].strftime('%Y-%m-%d')
+        
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        
+        if interval.endswith('m'):
+            current_time = int(df.index[-1].timestamp())
+        else:
+            current_time = df.index[-1].strftime('%Y-%m-%d')
     else:
         current_open = current_high = current_low = current_close = 100.0
         current_time = today.strftime('%Y-%m-%d')

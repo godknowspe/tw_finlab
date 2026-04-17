@@ -744,7 +744,7 @@
                     }
                     
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${encodeURIComponent(symbol)}`;
+                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`;
                     ws = new WebSocket(wsUrl);
                     
                     ws.onopen = () => {
