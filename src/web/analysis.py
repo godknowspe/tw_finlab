@@ -100,5 +100,51 @@ def calculate_trade_analysis(trades):
                     if b["shares"] == 0:
                         buy_queue.pop(0)
 
+        # 處理未平倉 (Open positions)
+        for b in buy_queue:
+            if b["shares"] > 0:
+                current_price = float(df.iloc[-1]['close']) if not df.empty else b["price"]
+                today_date = pd.to_datetime(today)
+                
+                hold_df = df[(df.index >= b["date"])]
+                if not hold_df.empty:
+                    period_high = max(hold_df['high'].max(), b["price"], current_price)
+                    period_low = min(hold_df['low'].min(), b["price"], current_price)
+                else:
+                    period_high = max(b["price"], current_price)
+                    period_low = min(b["price"], current_price)
+                    
+                mae = (period_low - b["price"]) / b["price"] * 100
+                mfe = (period_high - b["price"]) / b["price"] * 100
+                
+                spread = period_high - period_low
+                if spread > 0:
+                    efficiency = (current_price - b["price"]) / spread * 100
+                    efficiency = max(0.0, min(100.0, efficiency))
+                else:
+                    efficiency = 0.0
+                    
+                unrealized = (current_price - b["price"]) * b["shares"]
+                
+                analysis_results.append({
+                    "symbol": sym,
+                    "buy_id": b["id"],
+                    "sell_id": None, # 代表未平倉
+                    "buy_date": b["date"].strftime('%Y-%m-%d'),
+                    "sell_date": "-",
+                    "buy_price": b["price"],
+                    "sell_price": current_price,
+                    "shares": b["shares"],
+                    "mae_pct": round(mae, 2),
+                    "mfe_pct": round(mfe, 2),
+                    "efficiency_pct": round(efficiency, 2),
+                    "realized": round(unrealized, 2), # 這裡借用 realized 欄位放未實現損益
+                    "status": "OPEN"
+                })
+
+    for r in analysis_results:
+        if "status" not in r:
+            r["status"] = "CLOSED"
+
     return analysis_results
 

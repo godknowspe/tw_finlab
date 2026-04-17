@@ -243,12 +243,52 @@
         
         
         <div id="analysis-container" class="flex-1 w-full overflow-y-auto p-4" v-show="chartMode === 'analysis'">
+            
             <div class="bg-gray-900 rounded-lg p-4 border border-gray-700 mb-4 shadow-lg">
-                <h3 class="text-white font-bold text-md mb-3 border-b border-gray-700 pb-2">交易優劣分析 (FIFO配對)</h3>
+                <h3 class="text-white font-bold text-md mb-3 border-b border-gray-700 pb-2">📂 未平倉持股分析 (Open Positions)</h3>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs">
                         <thead>
                             <tr class="text-gray-400 border-b border-gray-700">
+                                <th class="pb-2">商品</th>
+                                <th class="pb-2">買進日</th>
+                                <th class="pb-2">持倉天數</th>
+                                <th class="pb-2 text-right">數量</th>
+                                <th class="pb-2 text-right">進場價</th>
+                                <th class="pb-2 text-right">現價</th>
+                                <th class="pb-2 text-right">最大回撤 MAE(%)</th>
+                                <th class="pb-2 text-right">最大利潤 MFE(%)</th>
+                                <th class="pb-2 text-right">目前效率(%)</th>
+                                <th class="pb-2 text-right">未實現盈虧</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-300">
+                            <tr v-for="(row, idx) in analysisData.filter(d => d.status === 'OPEN')" :key="'open_'+idx" class="border-b border-gray-800 hover:bg-gray-800">
+                                <td class="py-2 font-bold text-blue-300">{{ row.symbol }}</td>
+                                <td class="py-2">{{ row.buy_date }}</td>
+                                <td class="py-2">{{ Math.floor((new Date() - new Date(row.buy_date))/(1000*60*60*24)) }}天</td>
+                                <td class="py-2 text-right text-gray-400 font-mono">{{ row.shares }}</td>
+                                <td class="py-2 text-right font-mono">{{ row.buy_price.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-white">{{ row.sell_price.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono" :class="row.mae_pct < -5 ? 'text-red-400 font-bold' : ''">{{ row.mae_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-green-400">{{ row.mfe_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-yellow-300">{{ row.efficiency_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono" :class="row.realized >= 0 ? 'text-green-400' : 'text-red-400'">{{ row.realized.toFixed(2) }}</td>
+                            </tr>
+                            <tr v-if="analysisData.filter(d => d.status === 'OPEN').length === 0">
+                                <td colspan="10" class="py-6 text-center text-gray-500 italic">目前無未平倉部位</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 rounded-lg p-4 border border-gray-700 mb-4 shadow-lg">
+                <h3 class="text-gray-400 font-bold text-md mb-3 border-b border-gray-700 pb-2">✅ 已平倉交易分析 (Closed Trades)</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs opacity-80">
+                        <thead>
+                            <tr class="text-gray-500 border-b border-gray-700">
                                 <th class="pb-2">商品</th>
                                 <th class="pb-2">買進日</th>
                                 <th class="pb-2">賣出日</th>
@@ -262,22 +302,22 @@
                                 <th class="pb-2 text-right">已實現盈虧</th>
                             </tr>
                         </thead>
-                        <tbody class="text-gray-300">
-                            <tr v-for="(row, idx) in analysisData" :key="idx" class="border-b border-gray-800 hover:bg-gray-800">
-                                <td class="py-2 font-bold text-blue-300">{{ row.symbol }}</td>
+                        <tbody class="text-gray-400">
+                            <tr v-for="(row, idx) in analysisData.filter(d => d.status === 'CLOSED')" :key="'close_'+idx" class="border-b border-gray-800 hover:bg-gray-800">
+                                <td class="py-2 font-bold">{{ row.symbol }}</td>
                                 <td class="py-2">{{ row.buy_date }}</td>
                                 <td class="py-2">{{ row.sell_date }}</td>
                                 <td class="py-2">{{ Math.floor((new Date(row.sell_date) - new Date(row.buy_date))/(1000*60*60*24)) }}天</td>
-                                <td class="py-2 text-right text-gray-400 font-mono">{{ row.shares }}</td>
+                                <td class="py-2 text-right font-mono">{{ row.shares }}</td>
                                 <td class="py-2 text-right font-mono">{{ row.buy_price.toFixed(2) }}</td>
-                                <td class="py-2 text-right font-mono">{{ row.sell_price.toFixed(2) }}</td>
-                                <td class="py-2 text-right font-mono" :class="row.mae_pct < -5 ? 'text-red-400' : ''">{{ row.mae_pct.toFixed(2) }}</td>
-                                <td class="py-2 text-right font-mono text-green-400">{{ row.mfe_pct.toFixed(2) }}</td>
-                                <td class="py-2 text-right font-mono text-yellow-300">{{ row.efficiency_pct.toFixed(2) }}</td>
-                                <td class="py-2 text-right font-mono" :class="row.realized >= 0 ? 'text-green-400' : 'text-red-400'">{{ row.realized.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-white">{{ row.sell_price.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono" :class="row.mae_pct < -5 ? 'text-red-500' : ''">{{ row.mae_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-green-500">{{ row.mfe_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono text-yellow-500">{{ row.efficiency_pct.toFixed(2) }}</td>
+                                <td class="py-2 text-right font-mono font-bold" :class="row.realized >= 0 ? 'text-green-500' : 'text-red-500'">{{ row.realized.toFixed(2) }}</td>
                             </tr>
-                            <tr v-if="analysisData.length === 0">
-                                <td colspan="11" class="py-6 text-center text-gray-500 italic">目前無已平倉紀錄可供分析</td>
+                            <tr v-if="analysisData.filter(d => d.status === 'CLOSED').length === 0">
+                                <td colspan="11" class="py-6 text-center text-gray-600 italic">目前無已平倉紀錄可供分析</td>
                             </tr>
                         </tbody>
                     </table>
