@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; margin: 0; padding: 0; height: 100dvh; overflow: hidden; }
         .panel-bg { background-color: #161b22; }
@@ -70,6 +71,32 @@
                         <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
                         <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
                             {{ item.chg_pct }}
+                        </div>
+                    </div>
+                </div>
+                </div>
+                
+                <div v-if="watchlistUS.length > 0" class="text-[10px] text-gray-500 font-bold bg-[#0d1117] px-4 py-1 border-b border-line mt-2">🇺🇸 US MARKET</div>
+                <div ref="sortableUS">
+                    <div v-for="item in watchlistUS" :key="item.symbol" :data-id="item.symbol"
+                         class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 transition-colors duration-200"
+                         :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
+                         @click="loadChart(item.symbol)">
+                        <div>
+                            <div class="font-bold text-white flex items-center gap-2 group">
+                                <span class="text-[10px] px-1 rounded bg-gray-700 text-blue-300">🇺🇸</span>
+                                {{ item.symbol }}
+                                <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
+                                <button @click.stop="editWatchlist(item)" class="ml-2 text-blue-400">✎</button>
+                                <button @click.stop="delWatchlist(item.symbol)" class="ml-2 text-red-500">×</button>
+                            </div>
+                            <div class="text-xs text-gray-500">{{ item.name }}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
+                            <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
+                                {{ item.chg_pct }}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -431,7 +458,7 @@
 </div>
 
     <script>
-        const { createApp, ref, onMounted, reactive } = Vue;
+        const { createApp, ref, onMounted, reactive, computed, watch, nextTick } = Vue;
 
         createApp({
             setup() {
@@ -440,6 +467,47 @@
                 const currentSymbol = ref('2330');
                 const currentInterval = ref('1d');
                 const activeTab = ref('watchlist');
+                const sortableTW = ref(null);
+                const sortableUS = ref(null);
+                
+                const watchlistTW = computed(() => portfolio.value.watchlist ? portfolio.value.watchlist.filter(i => i.market === 'TW') : []);
+                const watchlistUS = computed(() => portfolio.value.watchlist ? portfolio.value.watchlist.filter(i => i.market === 'US') : []);
+                
+                const saveOrder = async () => {
+                    const getOrder = (refEl) => {
+                        if (!refEl.value) return [];
+                        return Array.from(refEl.value.children).map(el => el.getAttribute('data-id')).filter(Boolean);
+                    };
+                    const symbols = [...getOrder(sortableTW), ...getOrder(sortableUS)];
+                    try {
+                        await fetch('/api/watchlist/reorder', {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ symbols })
+                        });
+                    } catch(e) { console.error("Reorder failed", e); }
+                };
+                
+                watch([watchlistTW, watchlistUS], async () => {
+                    await nextTick();
+                    if (sortableTW.value && !sortableTW.value._sortable) {
+                        sortableTW.value._sortable = new Sortable(sortableTW.value, {
+                            animation: 150,
+                            delay: 200,
+                            delayOnTouchOnly: true,
+                            onEnd: saveOrder
+                        });
+                    }
+                    if (sortableUS.value && !sortableUS.value._sortable) {
+                        sortableUS.value._sortable = new Sortable(sortableUS.value, {
+                            animation: 150,
+                            delay: 200,
+                            delayOnTouchOnly: true,
+                            onEnd: saveOrder
+                        });
+                    }
+                });
+
                 const mobileView = ref('list');
                 const chartMode = ref('symbol');
                 const analysisData = ref([]);
@@ -1138,6 +1206,7 @@
                 });
 
                 return {
+                    sortableTW, sortableUS, watchlistTW, watchlistUS,
                     portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, mobileView, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected

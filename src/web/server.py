@@ -444,6 +444,22 @@ def del_watchlist(symbol: str):
     save_app_state(app_state)
     return {"status": "success", "message": f"{symbol} 已從自選股移除！"}
 
+class WatchlistOrder(BaseModel):
+    symbols: list[str]
+
+@app.put("/api/watchlist/reorder")
+def reorder_watchlist(order: WatchlistOrder):
+    current_watchlist = {w["symbol"]: w for w in app_state["watchlist"]}
+    new_watchlist = []
+    for sym in order.symbols:
+        if sym in current_watchlist:
+            new_watchlist.append(current_watchlist.pop(sym))
+    new_watchlist.extend(current_watchlist.values())
+    app_state["watchlist"] = new_watchlist
+    save_app_state(app_state)
+    return {"status": "success"}
+
+
 @app.post("/api/trades")
 def add_trade(item: TradeItem):
     if item.shares <= 0 or item.price <= 0:
