@@ -1,3 +1,4 @@
+import json
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +23,9 @@ def load_app_state():
         try:
             with open(STATE_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            print("LOAD ERROR:", e)
+            pass
             pass
     return {
         "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
@@ -59,6 +62,7 @@ def save_app_state(state):
         print(f"DEBUG: Save failed: {e}")
 
 app_state = load_app_state()
+print("DEBUG: Initial app_state loaded, watchlist symbols:", [w["symbol"] for w in app_state["watchlist"]])
 
 class SettingsUpdate(BaseModel):
     take_profit_pct: float
@@ -270,7 +274,8 @@ def get_portfolio():
             
         last_price = latest_prices[sym]
         chg = last_price - item["ref_price"]
-        chg_pct = (chg / item["ref_price"]) * 100
+        if item.get("ref_price") == 0: print("ZERO REF PRICE:", item)
+        chg_pct = (chg / item["ref_price"]) * 100 if item["ref_price"] else 0.0
         sign = "+" if chg >= 0 else ""
         
         enriched_watchlist.append({
@@ -381,9 +386,10 @@ def get_portfolio():
 
 class WatchlistItem(BaseModel):
     symbol: str
-    name: str
-    ref_price: float
+    name: str = ""
+    ref_price: float = 0.0
     market: str = "TW"
+
 
 class TradeItem(BaseModel):
     symbol: str
@@ -396,9 +402,27 @@ class TradeItem(BaseModel):
 @app.post("/api/watchlist")
 def add_watchlist(item: WatchlistItem):
     if not any(w["symbol"] == item.symbol for w in app_state["watchlist"]):
-        app_state["watchlist"].append({"symbol": item.symbol, "name": item.name, "ref_price": item.ref_price, "market": item.market})
+        name = item.name
+        ref_price = item.ref_price
+        if not name or not ref_price:
+            import yfinance as yf
+            yf_symbol = f"{item.symbol}.TW" if item.symbol.isdigit() else item.symbol
+            try:
+                tk = yf.Ticker(yf_symbol)
+                hist = tk.history(period="1d")
+                if not hist.empty and not ref_price:
+                    ref_price = float(hist["Close"].iloc[-1])
+                if not name:
+                    info = tk.info
+                    name = info.get("shortName", item.symbol)
+            except:
+                pass
+        if not name: name = item.symbol
+        if not ref_price or ref_price == 0.0: ref_price = 1.0
+        app_state["watchlist"].append({"symbol": item.symbol, "name": name, "ref_price": round(ref_price, 2), "market": item.market})
     save_app_state(app_state)
     return {"status": "success", "message": f"{item.symbol} 已加入自選股！"}
+
 
 @app.delete("/api/watchlist/{symbol}")
 def del_watchlist(symbol: str):
@@ -500,7 +524,8 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str):
     
     try:
         df = yf.download(yf_symbol, period="5d", progress=False)
-    except:
+    except Exception as e:
+        print("YF ERROR:", e)
         df = pd.DataFrame()
         
     if not df.empty:
