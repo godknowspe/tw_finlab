@@ -442,6 +442,7 @@
                 let ws = null;
 
                 let chart = null;
+                let pnlData = [];  // 提升到外層 scope，避免 crosshair callback stale closure
                 let candleSeries = null;
                 let symbolEquitySeries = null;
                 let areaSeries = null;
@@ -796,6 +797,8 @@
                         volumeSeries.applyOptions({ visible: showVOL.value });
                     } else if (type === 'sma') {
                         showSMA.value = !showSMA.value;
+                        sma5Series.applyOptions({ visible: showSMA.value });
+                        sma10Series.applyOptions({ visible: showSMA.value });
                         smaSeries.applyOptions({ visible: showSMA.value });
                     } else if (type === 'rsi') {
                         showRSI.value = !showRSI.value;
@@ -909,7 +912,7 @@
                             const kData = [];
                             const dData = [];
                             
-                            const pnlData = [];
+                            pnlData = [];
                             data.forEach(d => {
                                 if(d.total_pnl !== undefined && d.total_pnl !== null) pnlData.push({ time: d.time, value: d.total_pnl });
                                 if(d.sma5 !== null && d.sma5 !== undefined) sma5Data.push({ time: d.time, value: d.sma5 });
@@ -1037,6 +1040,7 @@
                     modalForm.symbol = item.symbol;
                     modalForm.name = item.name;
                     modalForm.ref_price = item.ref_price;
+                    modalForm.market = item.market || 'TW';
                 };
 
                 

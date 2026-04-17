@@ -13,7 +13,7 @@ import random
 
 app = FastAPI(title="TW FinLab Quant Dashboard")
 
-STATE_FILE = os.path.join(os.path.dirname(__file__), "app_state.json")
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_state.json")
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -48,18 +48,17 @@ def load_app_state():
     }
 
 def save_app_state(state):
-    # Use absolute path to avoid ambiguity with reload
-    abs_path = "/Users/godknows/code/tw_finlab/src/web/app_state.json"
-    print(f"DEBUG: Saving state to {abs_path}")
+    """原子性寫入，讀寫路徑統一使用 STATE_FILE"""
+    tmp_path = STATE_FILE + ".tmp"
     try:
-        # Atomic-ish write: write to temp first then rename
-        tmp_path = abs_path + ".tmp"
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(state, f, ensure_ascii=False, indent=4)
-        os.replace(tmp_path, abs_path)
-        print("DEBUG: Save successful")
+        os.replace(tmp_path, STATE_FILE)
     except Exception as e:
-        print(f"DEBUG: Save failed: {e}")
+        print(f"SAVE ERROR: {e}")
+
+# 保護全域狀態的 Lock，避免 race condition
+_state_lock = asyncio.Lock()
 
 app_state = load_app_state()
 print("DEBUG: Initial app_state loaded, watchlist symbols:", [w["symbol"] for w in app_state["watchlist"]])
@@ -168,9 +167,8 @@ def get_kbars(stock_id: str, interval: str = "1d"):
             
             # 針對 lightweight-charts 的格式: 60m 需使用 unix timestamp
             if interval.endswith('m'):
-                # Lightweight Charts 預設以 UTC 顯示 timestamp
-                # 所以我們把台灣時間當作 UTC 傳過去 (直接加上 28800 秒的 offset)
-                chart_time = int(index.timestamp()) + 28800
+                # 直接使用 UTC unix timestamp，讓前端 lightweight-charts 正確顯示
+                chart_time = int(index.timestamp())
             else:
                 chart_time = current_date_str
             
@@ -220,6 +218,22 @@ def get_kbars(stock_id: str, interval: str = "1d"):
         return result
     except Exception as e:
         return {"error": str(e)}
+
+
+# 報價快取（60 秒 TTL），避免每次 /api/portfolio 都打 yfinance
+_price_cache: dict = {}
+_price_cache_ts: dict = {}
+_PRICE_CACHE_TTL = 60  # seconds
+
+def _get_cached_price(symbol: str):
+    now = datetime.datetime.utcnow().timestamp()
+    if symbol in _price_cache and now - _price_cache_ts.get(symbol, 0) < _PRICE_CACHE_TTL:
+        return _price_cache[symbol]
+    return None
+
+def _set_cached_price(symbol: str, price: float):
+    _price_cache[symbol] = price
+    _price_cache_ts[symbol] = datetime.datetime.utcnow().timestamp()
 
 @app.get("/api/portfolio")
 def get_portfolio():
