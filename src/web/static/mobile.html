@@ -53,27 +53,29 @@
                 </div>
             </div>
             <div class="flex-1 overflow-y-auto pb-24">
-                <div v-for="item in portfolio.watchlist" :key="item.symbol" 
-                     class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
-                     :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
-                     @click="loadChart(item.symbol); mobileView = 'chart';">
-                    <div>
-                        <div class="font-bold text-white flex items-center gap-2 group">
-                            <span class="text-[10px] px-1 rounded bg-gray-700" :class="item.market === 'US' ? 'text-blue-300' : 'text-gray-400'">{{ item.market === 'US' ? '🇺🇸' : '🇹🇼' }}</span>
-                            {{ item.symbol }}
-                            <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
-                            <button @click.stop="editWatchlist(item)" class="hidden group-hover:block ml-1 text-blue-400 hover:text-blue-300">✎</button>
-                            <button @click.stop="delWatchlist(item.symbol)" class="hidden group-hover:block ml-1 text-red-500 hover:text-red-400">×</button>
+                <div v-if="watchlistTW.length > 0" class="text-[10px] text-gray-500 font-bold bg-[#0d1117] px-4 py-1 border-b border-line">🇹🇼 TW MARKET</div>
+                <div ref="sortableTW">
+                    <div v-for="item in watchlistTW" :key="item.symbol" :data-id="item.symbol"
+                         class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 transition-colors duration-200"
+                         :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
+                         @click="loadChart(item.symbol); mobileView = 'chart';">
+                        <div>
+                            <div class="font-bold text-white flex items-center gap-2 group">
+                                <span class="text-[10px] px-1 rounded bg-gray-700 text-gray-400">🇹🇼</span>
+                                {{ item.symbol }}
+                                <span v-if="currentSymbol === item.symbol && wsConnected" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live Data"></span>
+                                <button @click.stop="editWatchlist(item)" class="ml-2 text-blue-400">✎</button>
+                                <button @click.stop="delWatchlist(item.symbol)" class="ml-2 text-red-500">×</button>
+                            </div>
+                            <div class="text-xs text-gray-500">{{ item.name }}</div>
                         </div>
-                        <div class="text-xs text-gray-500">{{ item.name }}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
-                        <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
-                            {{ item.chg_pct }}
+                        <div class="text-right">
+                            <div class="font-mono text-white">{{ item.last.toFixed(2) }}</div>
+                            <div class="text-xs font-mono" :class="item.chg_pct.startsWith('+') ? 'text-green' : 'text-red'">
+                                {{ item.chg_pct }}
+                            </div>
                         </div>
                     </div>
-                </div>
                 </div>
                 
                 <div v-if="watchlistUS.length > 0" class="text-[10px] text-gray-500 font-bold bg-[#0d1117] px-4 py-1 border-b border-line mt-2">🇺🇸 US MARKET</div>
@@ -81,7 +83,7 @@
                     <div v-for="item in watchlistUS" :key="item.symbol" :data-id="item.symbol"
                          class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 transition-colors duration-200"
                          :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
-                         @click="loadChart(item.symbol)">
+                         @click="loadChart(item.symbol); mobileView = 'chart';">
                         <div>
                             <div class="font-bold text-white flex items-center gap-2 group">
                                 <span class="text-[10px] px-1 rounded bg-gray-700 text-blue-300">🇺🇸</span>
