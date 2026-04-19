@@ -839,6 +839,7 @@
                 const switchMode = async (mode) => {
                     chartMode.value = mode;
                     if (mode === 'symbol') {
+                        areaSeries.setData([]); // 清除假資料
                         areaSeries.applyOptions({ visible: false });
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
@@ -858,6 +859,11 @@
                             macdSeries.applyOptions({ visible: true });
                             signalSeries.applyOptions({ visible: true });
                             histogramSeries.applyOptions({ visible: true });
+                        }
+                        await nextTick();
+                        const container = document.getElementById('tvchart');
+                        if (chart && container) {
+                            chart.resize(container.clientWidth, container.clientHeight);
                         }
                         loadChart(currentSymbol.value);
                     } else {
@@ -980,8 +986,15 @@
                 const loadChart = async (symbol) => {
                     if (chartMode.value !== 'symbol') {
                         chartMode.value = 'symbol';
+                        areaSeries.setData([]);
                         areaSeries.applyOptions({ visible: false });
                         candleSeries.applyOptions({ visible: true });
+                        
+                        await nextTick();
+                        const container = document.getElementById('tvchart');
+                        if (chart && container) {
+                            chart.resize(container.clientWidth, container.clientHeight);
+                        }
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
                         if(showSMA.value) { sma5Series.applyOptions({ visible: true }); sma10Series.applyOptions({ visible: true }); smaSeries.applyOptions({ visible: true }); }
@@ -1054,6 +1067,7 @@
                             
                             // 標注進出場與加減碼
                             if (portfolio.value && portfolio.value.trades) {
+                                const validTimes = new Set(data.map(d => d.time));
                                 const markers = portfolio.value.trades
                                     .filter(t => t.symbol === symbol)
                                     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
@@ -1066,7 +1080,8 @@
                                             shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
                                             text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
                                         };
-                                    });
+                                    })
+                                    .filter(m => validTimes.has(m.time)); // 避免標記在未開盤日產生空白 K 棒
                                 candleSeries.setMarkers(markers);
                             }
                             if(sma5Series) sma5Series.setData(sma5Data);
