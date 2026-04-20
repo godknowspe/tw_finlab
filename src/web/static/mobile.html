@@ -506,7 +506,7 @@
             setup() {
                 const portfolio = ref({ watchlist: [] });
                 const settings = reactive({ take_profit_pct: 10, stop_loss_pct: 5 });
-                const currentSymbol = ref('2330');
+                const currentSymbol = ref('');
                 const currentInterval = ref('1d');
                 const activeTab = ref('watchlist');
                 const sortableTW = ref(null);
@@ -703,8 +703,19 @@
                     kSeries = chart.addLineSeries({ color: '#facc15', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     dSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+                    const ro = new ResizeObserver(entries => {
+                        if (entries.length === 0 || entries[0].target !== container) return;
+                        const newRect = entries[0].contentRect;
+                        if (newRect.width > 0 && newRect.height > 0) {
+                            chart.resize(newRect.width, newRect.height);
+                        }
+                    });
+                    ro.observe(container);
+                    
                     window.addEventListener('resize', () => {
-                        chart.resize(container.clientWidth, container.clientHeight);
+                        if (container.clientWidth > 0 && container.clientHeight > 0) {
+                            chart.resize(container.clientWidth, container.clientHeight);
+                        }
                     });
                     
                     const legend = document.getElementById('chart-legend');
@@ -1239,7 +1250,12 @@
                 onMounted(() => {
                     initChart();
                     fetchPortfolio().then(() => {
-                        loadChart(currentSymbol.value);
+                        if (!currentSymbol.value && portfolio.value.watchlist && portfolio.value.watchlist.length > 0) {
+                            currentSymbol.value = portfolio.value.watchlist[0].symbol;
+                        }
+                        if (currentSymbol.value) {
+                            loadChart(currentSymbol.value);
+                        }
                         connectWebSocket();
                         setInterval(fetchPortfolio, 60000); // 延長為60秒，降低伺服器負擔
                     });

@@ -596,9 +596,13 @@ async def websocket_watchlist(websocket: WebSocket):
             
             symbols_to_fetch = []
             for w in app_state["watchlist"]:
+                sym = w["symbol"]
                 market = w.get("market", "TW")
-                if market == "TW" and tw_open: symbols_to_fetch.append(w["symbol"])
-                if market == "US" and us_open: symbols_to_fetch.append(w["symbol"])
+                is_open = (market == "TW" and tw_open) or (market == "US" and us_open)
+                
+                # 如果開盤中，或者我們還沒有這檔股票的任何報價，就加入抓取清單
+                if is_open or sym not in last_prices:
+                    symbols_to_fetch.append(sym)
                 
             if symbols_to_fetch:
                 # print("Fetching prices for:", symbols_to_fetch)
