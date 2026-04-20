@@ -551,6 +551,8 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = 
     
     # 抓取最後一筆歷史資料作為基準，若無則給預設值
     import yfinance as yf
+    import datetime
+    today = datetime.date.today()
     yf_symbol = f"{stock_id}.TW" if stock_id.isdigit() else stock_id
     
     try:
@@ -559,7 +561,6 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = 
         elif interval == '1mo': p = '1y'
         else: p = '5d'
         df = yf.download(yf_symbol, interval=interval, period=p, progress=False)
-        df = df.dropna(subset=['Close'])
     except Exception as e:
         print("YF ERROR:", e)
         df = pd.DataFrame()
@@ -568,20 +569,25 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = 
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
         df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'}, inplace=True)
+        df = df.dropna(subset=['close'])
         
-        last_row = df.iloc[-1]
-        current_open = float(last_row['open'])
-        current_high = float(last_row['high'])
-        current_low = float(last_row['low'])
-        current_close = float(last_row['close'])
-        
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
-        
-        if interval.endswith('m'):
-            current_time = int(df.index[-1].timestamp())
+        if df.empty:
+            current_open = current_high = current_low = current_close = 100.0
+            current_time = today.strftime('%Y-%m-%d')
         else:
-            current_time = df.index[-1].strftime('%Y-%m-%d')
+            last_row = df.iloc[-1]
+            current_open = float(last_row['open'])
+            current_high = float(last_row['high'])
+            current_low = float(last_row['low'])
+            current_close = float(last_row['close'])
+            
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            
+            if interval.endswith('m'):
+                current_time = int(df.index[-1].timestamp())
+            else:
+                current_time = df.index[-1].strftime('%Y-%m-%d')
     else:
         current_open = current_high = current_low = current_close = 100.0
         current_time = today.strftime('%Y-%m-%d')
@@ -615,6 +621,8 @@ async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = 
                 }
             }
             await websocket.send_json(payload)
+    except Exception as ws_err:
+        with open("/tmp/ws_crash.txt", "a") as f: f.write(f"WS CRASH: {ws_err}\n")
     except WebSocketDisconnect:
         print(f"WebSocket client disconnected for {stock_id}")
 
