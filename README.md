@@ -64,7 +64,7 @@ pip install -r requirements.txt
 我們已經整合了一支主程式 `main.py`，它會自動抓取台積電 (2330) 過去一年的資料，並依序執行 SMA均線交叉、MACD交叉、RSI超買超賣以及布林通道策略。
 
 ```bash
-PYTHONPATH=. python main.py
+python -m uvicorn src.web.server:app --port 8000 --host 0.0.0.0 --reload
 ```
 
 執行後，終端機會印出各策略的詳細績效報表（包含夏普值、最大回撤等），並且會在專案根目錄自動產生每種策略的回測圖表 (PNG 檔)。
