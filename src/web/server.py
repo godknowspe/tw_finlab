@@ -559,22 +559,50 @@ def fetch_bulk_prices(symbols):
     res = {}
     if not symbols: return res
     yf_syms = [f"{s}.TW" if s.isdigit() else s for s in symbols]
+    sym_map = {yf_s: s for s, yf_s in zip(symbols, yf_syms)}
+
+    def _fetch_one(yf_sym, orig_sym):
+        """Fetch a single symbol, return (orig_sym, price) or None."""
+        try:
+            df = yf.download(yf_sym, period="5d", progress=False, auto_adjust=True)
+            if df is None or df.empty:
+                return None
+            closes = df['Close'].dropna()
+            if closes.empty:
+                return None
+            return (orig_sym, float(closes.iloc[-1]))
+        except Exception as e:
+            print(f"Single fetch error [{orig_sym}]: {e}")
+            return None
+
+    # 1. Try batch first
     try:
-        df = yf.download(yf_syms, period="5d", interval="1m", group_by="ticker", progress=False)
-        if df.empty: return res
-        
-        if len(yf_syms) == 1:
-            sym_df = df.dropna(subset=['Close'])
-            if not sym_df.empty:
-                res[symbols[0]] = float(sym_df['Close'].iloc[-1])
-        else:
-            for sym, yf_sym in zip(symbols, yf_syms):
-                if yf_sym in df.columns.levels[0]:
-                    sym_df = df[yf_sym].dropna(subset=['Close'])
-                    if not sym_df.empty:
-                        res[sym] = float(sym_df['Close'].iloc[-1])
+        df = yf.download(yf_syms, period="5d", progress=False,
+                         auto_adjust=True, group_by="ticker")
+        if df is not None and not df.empty:
+            if len(yf_syms) == 1:
+                closes = df['Close'].dropna()
+                if not closes.empty:
+                    res[symbols[0]] = float(closes.iloc[-1])
+            else:
+                for yf_sym, orig_sym in sym_map.items():
+                    try:
+                        closes = df[yf_sym]['Close'].dropna()
+                        if not closes.empty:
+                            res[orig_sym] = float(closes.iloc[-1])
+                    except Exception:
+                        pass  # will retry individually below
     except Exception as e:
-        print("Bulk fetch error:", e)
+        print(f"Batch fetch error (will retry individually): {e}")
+
+    # 2. For any symbol that failed in batch, retry one by one
+    missing = [s for s in symbols if s not in res]
+    for orig_sym in missing:
+        yf_sym = f"{orig_sym}.TW" if orig_sym.isdigit() else orig_sym
+        result = _fetch_one(yf_sym, orig_sym)
+        if result:
+            res[result[0]] = result[1]
+
     return res
 
 # Global WebSocket endpoint for real-time updates of the whole watchlist
