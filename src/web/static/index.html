@@ -1173,6 +1173,7 @@
                 
 
                 const delWatchlist = async (symbol) => {
+                    if(!confirm(`確定要從自選股移除 ${symbol} 嗎？`)) return;
                     try {
                         const res = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
                         const result = await res.json();
@@ -1182,6 +1183,7 @@
                 };
 
                 const delTrade = async (id) => {
+                    if(!confirm(`確定要刪除這筆交易紀錄嗎？`)) return;
                     try {
                         const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
                         const result = await res.json();
