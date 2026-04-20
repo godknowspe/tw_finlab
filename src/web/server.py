@@ -543,88 +543,89 @@ def get_equity():
         })
     return result
 
-# WebSockets endpoint to simulate real-time ticks
+import asyncio
+import datetime
+from fastapi import WebSocket, WebSocketDisconnect
 
-@app.websocket("/api/ws/quotes/{stock_id}")
-async def websocket_quotes(websocket: WebSocket, stock_id: str, interval: str = "1d"):
+def fetch_bulk_prices(symbols):
+    import yfinance as yf
+    import pandas as pd
+    res = {}
+    if not symbols: return res
+    yf_syms = [f"{s}.TW" if s.isdigit() else s for s in symbols]
+    try:
+        df = yf.download(yf_syms, period="5d", interval="1m", group_by="ticker", progress=False)
+        if df.empty: return res
+        
+        if len(yf_syms) == 1:
+            sym_df = df.dropna(subset=['Close'])
+            if not sym_df.empty:
+                res[symbols[0]] = float(sym_df['Close'].iloc[-1])
+        else:
+            for sym, yf_sym in zip(symbols, yf_syms):
+                if yf_sym in df.columns.levels[0]:
+                    sym_df = df[yf_sym].dropna(subset=['Close'])
+                    if not sym_df.empty:
+                        res[sym] = float(sym_df['Close'].iloc[-1])
+    except Exception as e:
+        print("Bulk fetch error:", e)
+    return res
+
+# Global WebSocket endpoint for real-time updates of the whole watchlist
+@app.websocket("/api/ws/watchlist")
+async def websocket_watchlist(websocket: WebSocket):
     await websocket.accept()
     
-    # 抓取最後一筆歷史資料作為基準，若無則給預設值
-    import yfinance as yf
-    import datetime
-    today = datetime.date.today()
-    yf_symbol = f"{stock_id}.TW" if stock_id.isdigit() else stock_id
+    # Use UTC to determine if TW/US is open, avoiding timezone complex imports
+    # TW: 01:00 UTC - 05:30 UTC (09:00 - 13:30 TST)
+    # US: 13:30 UTC - 20:00 UTC (09:30 - 16:00 EST)
+    
+    last_prices = {}
+    last_broadcast_time = {}
     
     try:
-        if interval.endswith('m'): p = '60d'
-        elif interval == '1wk': p = '3mo'
-        elif interval == '1mo': p = '1y'
-        else: p = '5d'
-        df = yf.download(yf_symbol, interval=interval, period=p, progress=False)
-    except Exception as e:
-        print("YF ERROR:", e)
-        df = pd.DataFrame()
-        
-    if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
-        df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'}, inplace=True)
-        df = df.dropna(subset=['close'])
-        
-        if df.empty:
-            current_open = current_high = current_low = current_close = 100.0
-            current_time = today.strftime('%Y-%m-%d')
-        else:
-            last_row = df.iloc[-1]
-            current_open = float(last_row['open'])
-            current_high = float(last_row['high'])
-            current_low = float(last_row['low'])
-            current_close = float(last_row['close'])
-            
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
-            
-            if interval.endswith('m'):
-                current_time = int(df.index[-1].timestamp())
-            else:
-                current_time = df.index[-1].strftime('%Y-%m-%d')
-    else:
-        current_open = current_high = current_low = current_close = 100.0
-        current_time = today.strftime('%Y-%m-%d')
-
-    try:
         while True:
-            await asyncio.sleep(0.5) # 每 0.5 秒更新一次報價
+            now_utc = datetime.datetime.utcnow()
+            now_tw = now_utc + datetime.timedelta(hours=8)
+            is_weekday = now_tw.weekday() < 5
+            time_val_tw = now_tw.hour * 100 + now_tw.minute
             
-            # 模擬股價隨機漫步 (跳動)
-            tick_diff = random.uniform(-1.0, 1.0)
-            # 台積電價格較大，波動給大一點
-            if stock_id == "2330" or current_close > 500:
-                tick_diff = random.uniform(-3.0, 3.0)
+            # Roughly check open times
+            tw_open = is_weekday and (830 <= time_val_tw <= 1340)
+            us_open = is_weekday and (time_val_tw >= 2130 or time_val_tw <= 500)
+            
+            symbols_to_fetch = []
+            for w in app_state["watchlist"]:
+                market = w.get("market", "TW")
+                if market == "TW" and tw_open: symbols_to_fetch.append(w["symbol"])
+                if market == "US" and us_open: symbols_to_fetch.append(w["symbol"])
                 
-            current_close = round(current_close + tick_diff, 2)
+            if symbols_to_fetch:
+                # print("Fetching prices for:", symbols_to_fetch)
+                prices = await asyncio.to_thread(fetch_bulk_prices, symbols_to_fetch)
+                
+                updates = []
+                for sym, price in prices.items():
+                    if price != last_prices.get(sym):
+                        last_prices[sym] = price
+                        last_broadcast_time[sym] = now_tw.strftime('%H:%M:%S')
+                        updates.append({
+                            "symbol": sym,
+                            "price": round(price, 2),
+                            "time": last_broadcast_time[sym]
+                        })
+                
+                if updates:
+                    await websocket.send_json({"type": "updates", "data": updates})
+                    
+            sleep_time = 15 if (tw_open or us_open) else 60
+            await asyncio.sleep(sleep_time)
             
-            # 更新今日最高/最低
-            if current_close > current_high:
-                current_high = current_close
-            if current_close < current_low:
-                current_low = current_close
-
-            payload = {
-                "symbol": stock_id,
-                "candle": {
-                    "time": current_time,
-                    "open": current_open,
-                    "high": current_high,
-                    "low": current_low,
-                    "close": current_close
-                }
-            }
-            await websocket.send_json(payload)
-    except Exception as ws_err:
-        with open("/tmp/ws_crash.txt", "a") as f: f.write(f"WS CRASH: {ws_err}\n")
     except WebSocketDisconnect:
-        print(f"WebSocket client disconnected for {stock_id}")
+        print("WebSocket client disconnected")
+    except Exception as e:
+        print(f"WS CRASH: {e}")
+
 
 if __name__ == "__main__":
     uvicorn.run("src.web.server:app", host="0.0.0.0", port=8000, reload=True)

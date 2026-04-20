@@ -53,7 +53,7 @@
             <div class="flex-1 overflow-y-auto">
                 <div v-if="watchlistTW.length > 0" class="text-[10px] text-gray-500 font-bold bg-[#0d1117] px-4 py-1 border-b border-line">🇹🇼 TW MARKET</div>
                 <div ref="sortableTW">
-                    <div v-for="item in watchlistTW" :key="item.symbol" :data-id="item.symbol"
+                    <div v-for="item in watchlistTW" :key="item.symbol" :data-id="item.symbol" :title="item.last_update_time ? '最後更新: ' + item.last_update_time : ''"
                          class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                          :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
                          @click="loadChart(item.symbol)">
@@ -78,7 +78,7 @@
                 
                 <div v-if="watchlistUS.length > 0" class="text-[10px] text-gray-500 font-bold bg-[#0d1117] px-4 py-1 border-b border-line mt-2">🇺🇸 US MARKET</div>
                 <div ref="sortableUS">
-                    <div v-for="item in watchlistUS" :key="item.symbol" :data-id="item.symbol"
+                    <div v-for="item in watchlistUS" :key="item.symbol" :data-id="item.symbol" :title="item.last_update_time ? '最後更新: ' + item.last_update_time : ''"
                          class="flex justify-between items-center px-4 py-3 border-b border-line hover:bg-gray-800 cursor-pointer transition-colors duration-200"
                          :class="[currentSymbol === item.symbol ? 'bg-gray-800' : '', item.flashClass]"
                          @click="loadChart(item.symbol)">
@@ -777,61 +777,44 @@
 
                 };
 
-                const connectWebSocket = (symbol) => {
-                    if(ws) {
-                        ws.close();
-                        ws = null;
-                    }
+                const connectWebSocket = () => {
+                    if(ws) return;
                     
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}/api/ws/quotes/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`;
+                    const wsUrl = `${protocol}//${window.location.host}/api/ws/watchlist`;
                     ws = new WebSocket(wsUrl);
                     
                     ws.onopen = () => {
                         wsConnected.value = true;
-                        showToast(`已連線至 ${symbol} 即時報價`, '🟢');
+                        showToast(`已連線至即時報價伺服器`, '🟢');
                     };
                     
                     ws.onmessage = (event) => {
-                        const data = JSON.parse(event.data);
-                        if(data.symbol === currentSymbol.value) {
-                            // 更新 K 線圖最新的 Candle
-                            candleSeries.update(data.candle);
-                            
-                            // 尋找 Watchlist 中對應的股票來更新左側面板與上方數值
-                            const watchItem = portfolio.value.watchlist.find(i => i.symbol === data.symbol);
-                            if(watchItem) {
-                                const oldPrice = watchItem.last;
-                                const newPrice = data.candle.close;
-                                
-                                // 計算漲跌幅
-                                const chg = newPrice - watchItem.ref_price;
-                                const chgPct = (chg / watchItem.ref_price * 100).toFixed(2);
-                                const sign = chg >= 0 ? '+' : '';
-                                
-                                watchItem.last = newPrice;
-                                watchItem.chg_pct = `${sign}${chgPct}%`;
-                                
-                                // 觸發閃爍特效 (綠漲紅跌)
-                                if (newPrice > oldPrice) {
-                                    watchItem.flashClass = 'flash-green';
-                                } else if (newPrice < oldPrice) {
-                                    watchItem.flashClass = 'flash-red';
+                        const payload = JSON.parse(event.data);
+                        if(payload.type === 'updates') {
+                            payload.data.forEach(data => {
+                                const watchItem = portfolio.value.watchlist.find(i => i.symbol === data.symbol);
+                                if(watchItem) {
+                                    const newPrice = data.price;
+                                    const chg = newPrice - watchItem.ref_price;
+                                    const chgPct = (chg / watchItem.ref_price * 100).toFixed(2);
+                                    const sign = chg >= 0 ? '+' : '';
+                                    
+                                    watchItem.last = newPrice;
+                                    watchItem.chg_pct = `${sign}${chgPct}%`;
+                                    watchItem.last_update_time = data.time;
+                                    
+                                    watchItem.flashClass = chg >= 0 ? 'flash-green' : 'flash-red';
+                                    setTimeout(() => { watchItem.flashClass = ''; }, 500);
                                 }
-                                setTimeout(() => { watchItem.flashClass = ''; }, 500);
-                                
-                                // 更新上方狀態列
-                                currentQuote.value = {
-                                    close: newPrice,
-                                    chg: chg,
-                                    chgPct: Math.abs(chgPct)
-                                };
-                            }
+                            });
                         }
                     };
                     
                     ws.onclose = () => {
                         wsConnected.value = false;
+                        ws = null;
+                        setTimeout(connectWebSocket, 5000);
                     };
                 };
 
@@ -1109,7 +1092,7 @@
                         } else {
                             candleSeries.setData([]);
                         }
-                        connectWebSocket(symbol);
+                        
                             if (costLine) {
                                 candleSeries.removePriceLine(costLine);
                                 costLine = null;
@@ -1235,8 +1218,8 @@
                     initChart();
                     fetchPortfolio().then(() => {
                         loadChart(currentSymbol.value);
-                        // 每 30 秒自動更新一次左側清單真實報價
-                        setInterval(fetchPortfolio, 30000);
+                        connectWebSocket();
+                        setInterval(fetchPortfolio, 60000); // 延長為60秒，降低伺服器負擔
                     });
                 });
 
