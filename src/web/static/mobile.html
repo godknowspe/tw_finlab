@@ -703,14 +703,16 @@
                     kSeries = chart.addLineSeries({ color: '#facc15', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     dSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceScaleId: 'kd', visible: false });
                     chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-                    const ro = new ResizeObserver(entries => {
-                        if (entries.length === 0 || entries[0].target !== container) return;
-                        const newRect = entries[0].contentRect;
-                        if (newRect.width > 0 && newRect.height > 0) {
-                            chart.resize(newRect.width, newRect.height);
-                        }
-                    });
-                    ro.observe(container);
+                    if (typeof ResizeObserver !== 'undefined') {
+                        const ro = new ResizeObserver(entries => {
+                            if (entries.length === 0 || entries[0].target !== container) return;
+                            const newRect = entries[0].contentRect;
+                            if (newRect.width > 0 && newRect.height > 0) {
+                                chart.resize(newRect.width, newRect.height);
+                            }
+                        });
+                        ro.observe(container);
+                    }
                     
                     window.addEventListener('resize', () => {
                         if (container.clientWidth > 0 && container.clientHeight > 0) {
@@ -1110,15 +1112,24 @@
                             signalSeries.setData(signalData);
                             histogramSeries.setData(histData);
                             
-                            const totalBars = data.length;
-                            if (totalBars > 60) {
+                            const totalBars = validData.length; console.log('TOTAL BARS:', totalBars, validData.length > 0 ? validData[0].time : 'none');
+                            if (totalBars > 120) {
                                 chart.timeScale().setVisibleRange({
-                                    from: data[totalBars - 60].time,
-                                    to: data[totalBars - 1].time
+                                    from: validData[totalBars - 120].time,
+                                    to: validData[totalBars - 1].time
                                 });
                             } else {
                                 chart.timeScale().fitContent();
                             }
+                            // 強制讓 Lightweight Charts 真正重繪
+                            setTimeout(() => {
+                                if(chart && totalBars > 120) {
+                                    chart.timeScale().setVisibleRange({
+                                        from: validData[totalBars - 120].time,
+                                        to: validData[totalBars - 1].time
+                                    });
+                                }
+                            }, 300);
                         } else {
                             candleSeries.setData([]);
                         }
@@ -1251,23 +1262,27 @@
                             const container = document.getElementById('tvchart');
                             if (container) {
                                 chart.resize(container.clientWidth, container.clientHeight);
-                                chart.timeScale().fitContent();
                             }
                         }, 100);
                     }
                 });
-                onMounted(() => {
+                onMounted(async () => {
                     initChart();
-                    fetchPortfolio().then(() => {
-                        if (!currentSymbol.value && portfolio.value.watchlist && portfolio.value.watchlist.length > 0) {
-                            currentSymbol.value = portfolio.value.watchlist[0].symbol;
-                        }
-                        if (currentSymbol.value) {
-                            setTimeout(() => loadChart(currentSymbol.value), 150);
-                        }
-                        connectWebSocket();
-                        setInterval(fetchPortfolio, 60000); // 延長為60秒，降低伺服器負擔
-                    });
+                    await fetchPortfolio();
+                    if (!currentSymbol.value && portfolio.value.watchlist && portfolio.value.watchlist.length > 0) {
+                        currentSymbol.value = portfolio.value.watchlist[0].symbol;
+                    }
+                    if (currentSymbol.value) {
+                        setTimeout(async () => {
+                            const container = document.getElementById('tvchart');
+                            if (chart && container && container.clientWidth > 0) {
+                                chart.resize(container.clientWidth, container.clientHeight);
+                            }
+                            await loadChart(currentSymbol.value);
+                        }, 300);
+                    }
+                    connectWebSocket();
+                    setInterval(fetchPortfolio, 60000);
                 });
 
                 return {
