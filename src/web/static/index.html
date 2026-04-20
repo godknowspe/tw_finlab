@@ -978,6 +978,11 @@
 
 
                 const loadChart = async (symbol) => {
+                    // 確保圖表容器尺寸已就緒再載入
+                    const _c = document.getElementById('tvchart');
+                    if (chart && _c && _c.clientWidth > 0) {
+                        chart.resize(_c.clientWidth, _c.clientHeight);
+                    }
                     if (chartMode.value !== 'symbol') {
                         chartMode.value = 'symbol';
                         areaSeries.setData([]);
@@ -1013,7 +1018,9 @@
                         const res = await fetch(`/api/kbars/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`);
                         const data = await res.json();
                         if(data && data.length > 0) {
-                            candleSeries.setData(data);
+                            // Filter out bars with null OHLC to prevent lightweight-charts crash
+                            const validData = data.filter(d => d.open !== null && d.high !== null && d.low !== null && d.close !== null);
+                            candleSeries.setData(validData);
                             
                             // 準備指標資料
                             const sma5Data = [];
@@ -1232,7 +1239,7 @@
                             currentSymbol.value = portfolio.value.watchlist[0].symbol;
                         }
                         if (currentSymbol.value) {
-                            loadChart(currentSymbol.value);
+                            setTimeout(() => loadChart(currentSymbol.value), 150);
                         }
                         connectWebSocket();
                         setInterval(fetchPortfolio, 60000); // 延長為60秒，降低伺服器負擔

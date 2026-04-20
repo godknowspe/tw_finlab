@@ -216,6 +216,12 @@ def get_kbars(stock_id: str, interval: str = "1d"):
                 "total_pnl": float(total_pnl) if total_pnl is not None else None,
                 "pnl_pct": float(pnl_pct) if pnl_pct is not None else None
             })
+        # Filter out any bars where OHLC contains None (causes lightweight-charts crash)
+        result = [
+            r for r in result
+            if r['open'] is not None and r['high'] is not None
+            and r['low'] is not None and r['close'] is not None
+        ]
         return result
     except Exception as e:
         return {"error": str(e)}
