@@ -57,7 +57,31 @@ def update_stock_data(stock_id: str, start_date: str, end_date: str):
     print(f"Data update complete for {stock_id}. Added: {records_added}, Updated: {records_updated}.")
 
 if __name__ == "__main__":
+    import json
+    import os
+    
     today = datetime.date.today().strftime('%Y-%m-%d')
-    start_date = (datetime.date.today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
-    update_stock_data("2330", start_date, today)
-    update_stock_data("AAPL", start_date, today)
+    start_date = (datetime.date.today() - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
+    
+    # 讀取 server 的 app_state.json 來獲取自選股和持倉的標的
+    state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'web', 'app_state.json')
+    symbols = set()
+    
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+                for w in state.get("watchlist", []):
+                    symbols.add(w.get("symbol"))
+                for t in state.get("trades", []):
+                    symbols.add(t.get("symbol"))
+        except Exception as e:
+            print("Error loading app_state.json:", e)
+    
+    if not symbols:
+        # 預設至少抓大盤和常見標的
+        symbols.update(["^TWII", "^GSPC", "2330", "AAPL"])
+        
+    for sym in symbols:
+        if sym:
+            update_stock_data(sym, start_date, today)
