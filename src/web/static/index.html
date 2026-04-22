@@ -454,19 +454,28 @@
                 </div>
             </div>
             
-            <!-- 策略參數 -->
+            <!-- 策略回測控制 -->
             <div>
-                 <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY SETTINGS]</div>
-                 <div class="space-y-3 text-xs">
-                     <label class="flex justify-between items-center">
-                         <span class="text-gray-400">Take Profit (%)</span>
-                         <input type="number" v-model.number="settings.take_profit_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
-                     </label>
-                     <label class="flex justify-between items-center">
-                         <span class="text-gray-400">Stop Loss (%)</span>
-                         <input type="number" v-model.number="settings.stop_loss_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
-                     </label>
-                 </div>
+                <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY BACKTEST]</div>
+                <div class="bg-gray-900 rounded p-3 border border-gray-700 space-y-3">
+                    <div class="flex flex-col gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-300">
+                            <input type="checkbox" value="RSI" v-model="selectedStrategies" @change="runBacktest" class="rounded bg-gray-800 border-gray-600 text-blue-600 focus:ring-0">
+                            <span>RSI 逆勢策略</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-300">
+                            <input type="checkbox" value="SMA_Cross" v-model="selectedStrategies" @change="runBacktest" class="rounded bg-gray-800 border-gray-600 text-blue-600 focus:ring-0">
+                            <span>均線黃金交叉</span>
+                        </label>
+                    </div>
+                    <div v-if="backtestResults && Object.keys(backtestResults).length > 0" class="pt-2 border-t border-gray-700 space-y-2">
+                        <div v-for="(res, name) in backtestResults" :key="name" class="text-[10px] font-mono p-1.5 rounded" :class="name === 'RSI' ? 'bg-blue-900/20 text-blue-300' : 'bg-purple-900/20 text-purple-300'">
+                            <div class="font-bold border-b border-white/10 mb-1">{{ name }}</div>
+                            <div class="flex justify-between"><span>Return:</span> <span class="font-bold">{{ res.total_return_pct }}%</span></div>
+                            <div class="flex justify-between"><span>MDD:</span> <span class="text-red-400">{{ res.max_drawdown_pct }}%</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -544,6 +553,9 @@
                 const equityValue = ref(null);
                 let costLine = null;
                 const currentQuote = ref(null);
+                const selectedStrategies = ref([]);
+                const backtestResults = ref({});
+                const backtestSeriesList = {};
                 
                 const toastMessage = ref('');
                 const toastIcon = ref('🔔');
@@ -776,6 +788,18 @@
                             if (k !== undefined && d !== undefined) html += `<div>KD <span class="text-yellow-400">${Number(k).toFixed(2)} | ${Number(d).toFixed(2)}</span></div>`;
                         }
                         
+                        if (Object.keys(backtestResults.value).length > 0) {
+                            html += `<div class="mt-1 pt-1 border-t border-gray-600">`;
+                            Object.entries(backtestSeriesList).forEach(([name, series]) => {
+                                const val = param.seriesPrices.get(series);
+                                if (val !== undefined && val !== null) {
+                                    const color = name === 'RSI' ? 'text-blue-400' : 'text-purple-400';
+                                    html += `<div class="text-[10px] ${color}">${name} Equity: ${val.toLocaleString()}</div>`;
+                                }
+                            });
+                            html += `</div>`;
+                        }
+
                         if (symbolEquitySeries) {
                             const pnlValue = param.seriesPrices.get(symbolEquitySeries);
                             if (pnlValue !== undefined && pnlValue !== null && !isNaN(pnlValue) && pnlData.length > 0) {
@@ -837,6 +861,10 @@
                     if (mode === 'symbol') {
                         areaSeries.setData([]); // 清除假資料
                         areaSeries.applyOptions({ visible: false });
+                        // 清除所有回測線
+                        Object.values(backtestSeriesList).forEach(s => s.setData([]));
+                        selectedStrategies.value = [];
+                        backtestResults.value = {};
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
@@ -878,6 +906,7 @@
                         signalSeries.applyOptions({ visible: false });
                         histogramSeries.applyOptions({ visible: false });
                         areaSeries.applyOptions({ visible: true });
+                        
                         symbolEquitySeries.applyOptions({ visible: false });
                         if(ws) { ws.close(); wsConnected.value = false; }
                         
@@ -979,6 +1008,38 @@
                 };
 
 
+                const runBacktest = async () => {
+                    if (!currentSymbol.value || selectedStrategies.value.length === 0) {
+                        backtestResults.value = {};
+                        Object.values(backtestSeriesList).forEach(s => s.setData([]));
+                        return;
+                    }
+                    try {
+                        const res = await fetch(`/api/backtest/${encodeURIComponent(currentSymbol.value)}?strategies=${selectedStrategies.value.join(',')}`);
+                        const result = await res.json();
+                        backtestResults.value = result;
+                        
+                        Object.entries(result).forEach(([name, data]) => {
+                            if (!backtestSeriesList[name]) {
+                                backtestSeriesList[name] = chart.addLineSeries({
+                                    color: name === 'RSI' ? '#3b82f6' : '#a855f7',
+                                    lineWidth: 2,
+                                    priceScaleId: 'left', // 改為左側座標，避免跟右側股價重疊
+                                    title: name,
+                                });
+                            }
+                            backtestSeriesList[name].setData(data.chart_data);
+                        });
+                        // 移除不在選擇清單中的線
+                        Object.keys(backtestSeriesList).forEach(name => {
+                            if (!result[name]) backtestSeriesList[name].setData([]);
+                        });
+                        
+                        // 強制視角縮放一次
+                        chart.timeScale().fitContent();
+                    } catch(e) { console.error(e); }
+                };
+
                 const loadChart = async (symbol) => {
                     // 確保圖表容器尺寸已就緒再載入
                     const _c = document.getElementById('tvchart');
@@ -1016,6 +1077,7 @@
                         }
                     }
                     currentSymbol.value = symbol;
+                    if (selectedStrategies.value.length > 0) runBacktest();
                     try {
                         const res = await fetch(`/api/kbars/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`);
                         const data = await res.json();
@@ -1268,7 +1330,8 @@
                     sortableTW, sortableUS, watchlistTW, watchlistUS,
                     showRightPanel, portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
-                    toastMessage, toastIcon, wsConnected
+                    toastMessage, toastIcon, wsConnected,
+                    selectedStrategies, backtestResults, runBacktest
                 }
             }
         }).mount('#app');

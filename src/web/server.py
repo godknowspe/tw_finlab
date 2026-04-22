@@ -525,6 +525,79 @@ def perform_action(req: ActionRequest):
     return {"status": "error", "message": "未知的指令"}
 
 
+from src.engine.backtest import Strategy, BacktestEngine
+
+class RSISignals(Strategy):
+    name = "RSI"
+    def init(self):
+        delta = self.data['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        self.data['rsi'] = 100 - (100 / (1 + rs))
+
+    def on_bar(self, i, bar):
+        if bar['rsi'] < 50 and self.broker.cash > bar['close'] * 1000:
+            self.buy(i, self.data.iloc[i]['stock_id'], 1000)
+        elif bar['rsi'] > 70 and self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
+            self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+
+class SMACross(Strategy):
+    name = "SMA_Cross"
+    def init(self):
+        self.data['sma20'] = self.data['close'].rolling(20).mean()
+        self.data['sma60'] = self.data['close'].rolling(60).mean()
+
+    def on_bar(self, i, bar):
+        if i < 1: return
+        prev_bar = self.data.iloc[i-1]
+        if prev_bar['sma20'] < prev_bar['sma60'] and bar['sma20'] > bar['sma60']:
+            if self.broker.cash > bar['close'] * 1000:
+                self.buy(i, self.data.iloc[i]['stock_id'], 1000)
+        elif prev_bar['sma20'] > prev_bar['sma60'] and bar['sma20'] < bar['sma60']:
+            if self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
+                self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+
+STRATEGIES = {
+    "RSI": RSISignals,
+    "SMA_Cross": SMACross
+}
+
+@app.get("/api/backtest/{symbol}")
+def run_backtest(symbol: str, strategies: str = "RSI"):
+    today = datetime.date.today().strftime('%Y-%m-%d')
+    start_date = (datetime.date.today() - datetime.timedelta(days=365*3)).strftime('%Y-%m-%d')
+    df = get_stock_data_df(symbol, start_date)
+    
+    if df.empty:
+        return {"error": "No data available for backtest"}
+        
+    df['stock_id'] = symbol
+    selected_strategies = strategies.split(",")
+    results_map = {}
+
+    for s_name in selected_strategies:
+        if s_name in STRATEGIES:
+            engine = BacktestEngine(df)
+            res = engine.run(STRATEGIES[s_name])
+            
+            equity_curve = res['equity_curve'].copy()
+            chart_data = []
+            for _, row in equity_curve.iterrows():
+                chart_data.append({
+                    "time": row['date'],
+                    "value": round(row['total_equity'], 2)
+                })
+            
+            results_map[s_name] = {
+                "total_return_pct": round(res['total_return'] * 100, 2),
+                "max_drawdown_pct": round(res['max_drawdown'] * 100, 2),
+                "final_equity": int(res['final_equity']),
+                "chart_data": chart_data
+            }
+        
+    return results_map
+
 @app.get("/api/equity")
 def get_equity():
     import random
