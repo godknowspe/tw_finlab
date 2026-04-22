@@ -1115,7 +1115,7 @@
                         }
                     }
                     currentSymbol.value = symbol;
-                    if (selectedStrategies.value.length > 0) runBacktest();
+                    if (backtestEnabled.value && selectedStrategies.value.length > 0) runBacktest();
                     try {
                         const res = await fetch(`/api/kbars/${encodeURIComponent(symbol)}?interval=${currentInterval.value}`);
                         const data = await res.json();
