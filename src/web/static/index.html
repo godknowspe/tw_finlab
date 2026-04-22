@@ -217,6 +217,32 @@
                             <button @click="toggleIndicator('kd')" class="px-4 py-2 text-left text-xs hover:bg-gray-700 flex justify-between items-center" :class="showKD ? 'text-yellow-400' : 'text-gray-400'"><span>KD</span><span v-if="showKD">✓</span></button>
                         </div>
                     </div>
+
+                    <div class="relative">
+                        <button @click="showBacktestMenu = !showBacktestMenu" class="bg-gray-800 text-gray-300 hover:text-white text-xs font-bold border border-gray-700 rounded px-3 py-1 outline-none transition-colors flex items-center gap-1 cursor-pointer">
+                            <span class="text-green-400">策略回測</span> <span class="text-[10px]">▾</span>
+                        </button>
+                        <div v-if="showBacktestMenu" @click="showBacktestMenu = false" class="fixed inset-0 z-40"></div>
+                        <div v-show="showBacktestMenu" class="absolute top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 w-56 flex flex-col overflow-hidden">
+                            <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-black/20">
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Active Backtest</span>
+                                <label class="relative inline-flex items-center cursor-pointer scale-75">
+                                    <input type="checkbox" v-model="backtestEnabled" class="sr-only peer">
+                                    <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                                </label>
+                            </div>
+                            <button v-for="s in ['RSI', 'SMA_Cross']" :key="s" @click="toggleStrategy(s)" class="px-4 py-2 text-left text-xs hover:bg-gray-800 flex justify-between items-center" :class="selectedStrategies.includes(s) ? 'text-blue-400' : 'text-gray-400'">
+                                <span>{{ s === 'RSI' ? 'RSI 逆勢策略' : '均線黃金交叉' }}</span>
+                                <span v-if="selectedStrategies.includes(s)">✓</span>
+                            </button>
+                            <div v-if="backtestEnabled && Object.keys(backtestResults).length > 0" class="p-3 bg-black/40 border-t border-gray-800 space-y-2">
+                                <div v-for="(res, name) in backtestResults" :key="name" class="text-[10px] font-mono">
+                                    <div class="flex justify-between text-gray-400"><span>{{ name }} Ret:</span> <span class="text-white font-bold">{{ res.total_return_pct }}%</span></div>
+                                    <div class="flex justify-between text-gray-400"><span>MDD:</span> <span class="text-red-400">{{ res.max_drawdown_pct }}%</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <span v-else class="text-gray-400">| Simulated Performance</span>
                 
@@ -454,28 +480,19 @@
                 </div>
             </div>
             
-            <!-- 策略回測控制 -->
+            <!-- 策略參數 -->
             <div>
-                <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY BACKTEST]</div>
-                <div class="bg-gray-900 rounded p-3 border border-gray-700 space-y-3">
-                    <div class="flex flex-col gap-2">
-                        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-300">
-                            <input type="checkbox" value="RSI" v-model="selectedStrategies" @change="runBacktest" class="rounded bg-gray-800 border-gray-600 text-blue-600 focus:ring-0">
-                            <span>RSI 逆勢策略</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-300">
-                            <input type="checkbox" value="SMA_Cross" v-model="selectedStrategies" @change="runBacktest" class="rounded bg-gray-800 border-gray-600 text-blue-600 focus:ring-0">
-                            <span>均線黃金交叉</span>
-                        </label>
-                    </div>
-                    <div v-if="backtestResults && Object.keys(backtestResults).length > 0" class="pt-2 border-t border-gray-700 space-y-2">
-                        <div v-for="(res, name) in backtestResults" :key="name" class="text-[10px] font-mono p-1.5 rounded" :class="name === 'RSI' ? 'bg-blue-900/20 text-blue-300' : 'bg-purple-900/20 text-purple-300'">
-                            <div class="font-bold border-b border-white/10 mb-1">{{ name }}</div>
-                            <div class="flex justify-between"><span>Return:</span> <span class="font-bold">{{ res.total_return_pct }}%</span></div>
-                            <div class="flex justify-between"><span>MDD:</span> <span class="text-red-400">{{ res.max_drawdown_pct }}%</span></div>
-                        </div>
-                    </div>
-                </div>
+                 <div class="text-xs text-gray-500 mb-2 font-mono">[STRATEGY SETTINGS]</div>
+                 <div class="space-y-3 text-xs">
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Take Profit (%)</span>
+                         <input type="number" v-model.number="settings.take_profit_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                     <label class="flex justify-between items-center">
+                         <span class="text-gray-400">Stop Loss (%)</span>
+                         <input type="number" v-model.number="settings.stop_loss_pct" @change="saveSettings" class="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500">
+                     </label>
+                 </div>
             </div>
         </div>
 
@@ -556,6 +573,8 @@
                 const selectedStrategies = ref([]);
                 const backtestResults = ref({});
                 const backtestSeriesList = {};
+                const showBacktestMenu = ref(false);
+                const backtestEnabled = ref(false);
                 
                 const toastMessage = ref('');
                 const toastIcon = ref('🔔');
@@ -607,6 +626,12 @@
                         layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
                         grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
                         crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
+                        leftPriceScale: { 
+                            borderColor: '#30363d',
+                            visible: true,
+                            autoScale: true,
+                            mode: LightweightCharts.PriceScaleMode.Normal
+                        },
                         rightPriceScale: { borderColor: '#30363d' },
                         timeScale: { borderColor: '#30363d', timeVisible: currentInterval.value.endsWith('m') },
                     });
@@ -865,6 +890,7 @@
                         Object.values(backtestSeriesList).forEach(s => s.setData([]));
                         selectedStrategies.value = [];
                         backtestResults.value = {};
+                        backtestEnabled.value = false;
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
@@ -1009,11 +1035,15 @@
 
 
                 const runBacktest = async () => {
-                    if (!currentSymbol.value || selectedStrategies.value.length === 0) {
+                    if (!currentSymbol.value || !backtestEnabled.value || selectedStrategies.value.length === 0) {
                         backtestResults.value = {};
                         Object.values(backtestSeriesList).forEach(s => s.setData([]));
+                        if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: true });
                         return;
                     }
+                    // 當有勾選回測時，隱藏原本的 PnL 線
+                    if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: false });
+                    
                     try {
                         const res = await fetch(`/api/backtest/${encodeURIComponent(currentSymbol.value)}?strategies=${selectedStrategies.value.join(',')}`);
                         const result = await res.json();
@@ -1035,9 +1065,17 @@
                             if (!result[name]) backtestSeriesList[name].setData([]);
                         });
                         
-                        // 強制視角縮放一次
-                        chart.timeScale().fitContent();
+                        // 不要自動 fitContent，改為維持當前的時間軸範圍
                     } catch(e) { console.error(e); }
+                };
+
+                watch(backtestEnabled, () => runBacktest());
+
+                const toggleStrategy = (s) => {
+                    const idx = selectedStrategies.value.indexOf(s);
+                    if (idx > -1) selectedStrategies.value.splice(idx, 1);
+                    else selectedStrategies.value.push(s);
+                    if (backtestEnabled.value) runBacktest();
                 };
 
                 const loadChart = async (symbol) => {
@@ -1331,7 +1369,8 @@
                     showRightPanel, portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected,
-                    selectedStrategies, backtestResults, runBacktest
+                    selectedStrategies, backtestResults, runBacktest,
+                    showBacktestMenu, backtestEnabled, toggleStrategy
                 }
             }
         }).mount('#app');
