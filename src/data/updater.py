@@ -1,5 +1,6 @@
 import datetime
 import re
+import pandas as pd
 from src.api.finmind_api import fetch_taiwan_stock_daily
 from src.api.yfinance_api import fetch_us_stock_daily
 from src.data.models import DailyPrice, get_engine, get_session, Base
@@ -40,6 +41,13 @@ def update_stock_data(stock_id: str, start_date: str, end_date: str, interval: s
     for _, row in df.iterrows():
         # 注意：如果是分 K，row['date'] 會是 Timestamp 對象
         d = row['date']
+        if hasattr(d, 'to_pydatetime'):
+            d = d.to_pydatetime()
+            
+        # 移除任何微秒，避免對比失敗
+        if hasattr(d, 'microsecond'):
+            d = d.replace(microsecond=0)
+            
         existing_record = session.query(DailyPrice).filter_by(
             stock_id=stock_id, 
             date=d,

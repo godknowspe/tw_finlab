@@ -561,7 +561,7 @@ def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d"):
     df = get_stock_data_df(symbol, start_date, interval=interval)
     
     # 如果資料太少，觸發自動同步
-    if df.empty or (interval == '1d' and len(df) < 500):
+    if df.empty or len(df) < 500:
         print(f"Data insufficient for {symbol} ({len(df)} bars). Triggering auto-sync...")
         try:
             from src.data.updater import update_stock_data
@@ -585,8 +585,11 @@ def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d"):
             equity_curve = res['equity_curve'].copy()
             chart_data = []
             for _, row in equity_curve.iterrows():
+                # 將 Timestamp 轉換為 ISO 字串，避免前端渲染報錯
+                ts = row['date']
+                time_str = ts.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ts, 'strftime') else str(ts)
                 chart_data.append({
-                    "time": row['date'],
+                    "time": time_str,
                     "value": round(row['total_equity'], 2)
                 })
             
@@ -644,7 +647,9 @@ def fetch_bulk_prices(symbols):
             closes = df['Close'].dropna()
             if closes.empty:
                 return None
-            return (orig_sym, float(closes.iloc[-1]))
+            val = closes.iloc[-1]
+            if hasattr(val, 'iloc'): val = val.iloc[0]
+            return (orig_sym, float(val))
         except Exception as e:
             print(f"Single fetch error [{orig_sym}]: {e}")
             return None
@@ -657,13 +662,17 @@ def fetch_bulk_prices(symbols):
             if len(yf_syms) == 1:
                 closes = df['Close'].dropna()
                 if not closes.empty:
-                    res[symbols[0]] = float(closes.iloc[-1])
+                    val = closes.iloc[-1]
+                    if hasattr(val, 'iloc'): val = val.iloc[0]
+                    res[symbols[0]] = float(val)
             else:
                 for yf_sym, orig_sym in sym_map.items():
                     try:
                         closes = df[yf_sym]['Close'].dropna()
                         if not closes.empty:
-                            res[orig_sym] = float(closes.iloc[-1])
+                            val = closes.iloc[-1]
+                            if hasattr(val, 'iloc'): val = val.iloc[0]
+                            res[orig_sym] = float(val)
                     except Exception:
                         pass  # will retry individually below
     except Exception as e:

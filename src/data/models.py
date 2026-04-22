@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, create_engine, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 
@@ -9,10 +9,8 @@ class DailyPrice(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_id = Column(String(20), nullable=False, index=True)
-    interval = Column(String(10), nullable=False, default='1d', index=True) # 新增 interval 欄位
-    date = Column(Date, nullable=False, index=True)
-    # 為了支援分 K，將 date 改為 DateTime 或改名為 timestamp
-    # 這裡我們維持叫 date 但儲存 ISO 字串或 DateTime 對象
+    interval = Column(String(10), nullable=False, default='1d', index=True)
+    date = Column(DateTime, nullable=False, index=True) # 改為 DateTime
     open = Column(Float, nullable=False)
     high = Column(Float, nullable=False)
     low = Column(Float, nullable=False)
