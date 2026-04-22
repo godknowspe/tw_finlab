@@ -8,8 +8,11 @@ class DailyPrice(Base):
     __tablename__ = 'daily_price'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    stock_id = Column(String(10), nullable=False, index=True)
+    stock_id = Column(String(20), nullable=False, index=True)
+    interval = Column(String(10), nullable=False, default='1d', index=True) # 新增 interval 欄位
     date = Column(Date, nullable=False, index=True)
+    # 為了支援分 K，將 date 改為 DateTime 或改名為 timestamp
+    # 這裡我們維持叫 date 但儲存 ISO 字串或 DateTime 對象
     open = Column(Float, nullable=False)
     high = Column(Float, nullable=False)
     low = Column(Float, nullable=False)
@@ -17,7 +20,7 @@ class DailyPrice(Base):
     volume = Column(Float, nullable=False)
     
     __table_args__ = (
-        UniqueConstraint('stock_id', 'date', name='uq_stock_date'),
+        UniqueConstraint('stock_id', 'date', 'interval', name='uq_stock_date_interval'),
     )
 
 def get_engine(db_path=None):

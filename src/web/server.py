@@ -555,20 +555,18 @@ from src.engine.backtest import BacktestEngine
 from src.engine.strategies import STRATEGIES
 
 @app.get("/api/backtest/{symbol}")
-def run_backtest(symbol: str, strategies: str = "RSI"):
+def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d"):
     today = datetime.date.today().strftime('%Y-%m-%d')
     start_date = (datetime.date.today() - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
-    df = get_stock_data_df(symbol, start_date)
+    df = get_stock_data_df(symbol, start_date, interval=interval)
     
-    # 如果資料太少（例如少於 200 筆，不夠跑長線回測），觸發自動同步
-    if df.empty or len(df) < 500:
+    # 如果資料太少，觸發自動同步
+    if df.empty or (interval == '1d' and len(df) < 500):
         print(f"Data insufficient for {symbol} ({len(df)} bars). Triggering auto-sync...")
         try:
             from src.data.updater import update_stock_data
-            # 同步過去 10 年
-            update_stock_data(symbol, start_date, datetime.date.today().strftime('%Y-%m-%d'))
-            # 同步完重新讀取一次
-            df = get_stock_data_df(symbol, start_date)
+            update_stock_data(symbol, start_date, datetime.date.today().strftime('%Y-%m-%d'), interval=interval)
+            df = get_stock_data_df(symbol, start_date, interval=interval)
         except Exception as e:
             print(f"Auto-sync failed for {symbol}: {e}")
 

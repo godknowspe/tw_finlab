@@ -2,11 +2,11 @@ import pandas as pd
 from sqlalchemy import text
 from src.data.models import get_engine
 
-def get_stock_data_df(stock_id: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+def get_stock_data_df(stock_id: str, start_date: str = None, end_date: str = None, interval: str = '1d') -> pd.DataFrame:
     engine = get_engine()
 
-    conditions = ["stock_id = :stock_id"]
-    params = {"stock_id": stock_id}
+    conditions = ["stock_id = :stock_id", "interval = :interval"]
+    params = {"stock_id": stock_id, "interval": interval}
 
     if start_date:
         conditions.append("date >= :start_date")

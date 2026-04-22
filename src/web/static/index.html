@@ -1050,7 +1050,7 @@
                     if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: false });
                     
                     try {
-                        const res = await fetch(`/api/backtest/${encodeURIComponent(currentSymbol.value)}?strategies=${selectedStrategies.value.join(',')}`);
+                        const res = await fetch(`/api/backtest/${encodeURIComponent(currentSymbol.value)}?strategies=${selectedStrategies.value.join(',')}&interval=${currentInterval.value}`);
                         const result = await res.json();
                         if (result.error) {
                             showToast(result.error, '❌');
