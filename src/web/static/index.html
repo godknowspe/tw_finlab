@@ -225,7 +225,10 @@
                         <div v-if="showBacktestMenu" @click="showBacktestMenu = false" class="fixed inset-0 z-40"></div>
                         <div v-show="showBacktestMenu" class="absolute top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 w-56 flex flex-col overflow-hidden">
                             <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-black/20">
-                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Active Backtest</span>
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                                    Active Backtest
+                                    <span v-if="isBacktesting" class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                </span>
                                 <label class="relative inline-flex items-center cursor-pointer scale-75">
                                     <input type="checkbox" v-model="backtestEnabled" class="sr-only peer">
                                     <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
@@ -1034,6 +1037,7 @@
                 };
 
 
+                const isBacktesting = ref(false);
                 const runBacktest = async () => {
                     if (!currentSymbol.value || !backtestEnabled.value || selectedStrategies.value.length === 0) {
                         backtestResults.value = {};
@@ -1041,32 +1045,36 @@
                         if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: true });
                         return;
                     }
+                    isBacktesting.value = true;
                     // 當有勾選回測時，隱藏原本的 PnL 線
                     if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: false });
                     
                     try {
                         const res = await fetch(`/api/backtest/${encodeURIComponent(currentSymbol.value)}?strategies=${selectedStrategies.value.join(',')}`);
                         const result = await res.json();
-                        backtestResults.value = result;
-                        
-                        Object.entries(result).forEach(([name, data]) => {
-                            if (!backtestSeriesList[name]) {
-                                backtestSeriesList[name] = chart.addLineSeries({
-                                    color: name === 'RSI' ? '#3b82f6' : '#a855f7',
-                                    lineWidth: 2,
-                                    priceScaleId: 'left', // 改為左側座標，避免跟右側股價重疊
-                                    title: name,
-                                });
-                            }
-                            backtestSeriesList[name].setData(data.chart_data);
-                        });
-                        // 移除不在選擇清單中的線
-                        Object.keys(backtestSeriesList).forEach(name => {
-                            if (!result[name]) backtestSeriesList[name].setData([]);
-                        });
-                        
-                        // 不要自動 fitContent，改為維持當前的時間軸範圍
+                        if (result.error) {
+                            showToast(result.error, '❌');
+                        } else {
+                            backtestResults.value = result;
+                            
+                            Object.entries(result).forEach(([name, data]) => {
+                                if (!backtestSeriesList[name]) {
+                                    backtestSeriesList[name] = chart.addLineSeries({
+                                        color: name === 'RSI' ? '#3b82f6' : '#a855f7',
+                                        lineWidth: 2,
+                                        priceScaleId: 'left', // 改為左側座標，避免跟右側股價重疊
+                                        title: name,
+                                    });
+                                }
+                                backtestSeriesList[name].setData(data.chart_data);
+                            });
+                            // 移除不在選擇清單中的線
+                            Object.keys(backtestSeriesList).forEach(name => {
+                                if (!result[name]) backtestSeriesList[name].setData([]);
+                            });
+                        }
                     } catch(e) { console.error(e); }
+                    finally { isBacktesting.value = false; }
                 };
 
                 watch(backtestEnabled, () => runBacktest());
@@ -1370,7 +1378,7 @@
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected,
                     selectedStrategies, backtestResults, runBacktest,
-                    showBacktestMenu, backtestEnabled, toggleStrategy
+                    showBacktestMenu, backtestEnabled, toggleStrategy, isBacktesting
                 }
             }
         }).mount('#app');

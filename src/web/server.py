@@ -113,6 +113,32 @@ def get_kbars(stock_id: str, interval: str = "1d"):
         
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
+
+        # 非同步同步回資料庫 (只針對日線資料)
+        if interval == "1d":
+            try:
+                from src.data.models import DailyPrice, get_engine, get_session, Base
+                engine = get_engine()
+                Base.metadata.create_all(engine)
+                session = get_session(engine)
+                
+                # 為了效能，只檢查最後 5 筆是否需要更新/插入
+                check_df = df.tail(10)
+                for dt, row in check_df.iterrows():
+                    date_obj = dt.date()
+                    existing = session.query(DailyPrice).filter_by(stock_id=stock_id, date=date_obj).first()
+                    if not existing:
+                        new_p = DailyPrice(
+                            stock_id=stock_id, date=date_obj,
+                            open=float(row['open']), high=float(row['high']),
+                            low=float(row['low']), close=float(row['close']),
+                            volume=float(row['volume'])
+                        )
+                        session.add(new_p)
+                session.commit()
+                session.close()
+            except Exception as db_e:
+                print(f"Background DB Sync Error for {stock_id}:", db_e)
         
         # 計算 SMA (5, 10, 20)
         df['sma5'] = df['close'].rolling(window=5).mean()
@@ -531,9 +557,21 @@ from src.engine.strategies import STRATEGIES
 @app.get("/api/backtest/{symbol}")
 def run_backtest(symbol: str, strategies: str = "RSI"):
     today = datetime.date.today().strftime('%Y-%m-%d')
-    start_date = (datetime.date.today() - datetime.timedelta(days=365*3)).strftime('%Y-%m-%d')
+    start_date = (datetime.date.today() - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
     df = get_stock_data_df(symbol, start_date)
     
+    # 如果資料太少（例如少於 200 筆，不夠跑長線回測），觸發自動同步
+    if df.empty or len(df) < 500:
+        print(f"Data insufficient for {symbol} ({len(df)} bars). Triggering auto-sync...")
+        try:
+            from src.data.updater import update_stock_data
+            # 同步過去 10 年
+            update_stock_data(symbol, start_date, datetime.date.today().strftime('%Y-%m-%d'))
+            # 同步完重新讀取一次
+            df = get_stock_data_df(symbol, start_date)
+        except Exception as e:
+            print(f"Auto-sync failed for {symbol}: {e}")
+
     if df.empty:
         return {"error": "No data available for backtest"}
         
