@@ -1084,9 +1084,13 @@
 
                 const toggleStrategy = (s) => {
                     const idx = selectedStrategies.value.indexOf(s);
-                    if (idx > -1) selectedStrategies.value.splice(idx, 1);
+                    if (idx > -1) {
+                        selectedStrategies.value.splice(idx, 1);
+                        if (backtestSeriesList[s]) backtestSeriesList[s].setData([]);
+                    }
                     else selectedStrategies.value.push(s);
                     if (backtestEnabled.value) runBacktest();
+                    else if (window._updateChartMarkers) window._updateChartMarkers();
                 };
 
                 const loadChart = async (symbol) => {
@@ -1181,53 +1185,119 @@
                             
                             const updateMarkers = () => {
                                 let markers = [];
-                                const validTimes = new Set(data.map(d => d.time));
+                                const validTimes = new Set();
+                                
+                                const formatChartTime = (t) => {
+                                    if (!t) return null;
+                                    if (typeof t === 'string') return t.trim();
+                                    if (typeof t === 'number') return String(t);
+                                    if (typeof t === 'object' && t.year && t.month && t.day) {
+                                        // Lightweight Charts BusinessDay format: {year, month, day}
+                                        return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+                                    }
+                                    return String(t);
+                                };
 
-                                // 1. 真實持倉的買賣標記 (PnL 相關)
+                                validData.forEach(d => {
+                                    validTimes.add(formatChartTime(d.time));
+                                });
+
+                                console.log('--- MARKER DEBUG ---');
+                                console.log('Sample Raw Time:', validData[0]?.time);
+                                console.log('Formatted Time:', formatChartTime(validData[0]?.time));
+
+                                // 1. 真實持倉的買賣標記
                                 if (portfolio.value && portfolio.value.trades) {
-                                    const realMarkers = portfolio.value.trades
+                                    portfolio.value.trades
                                         .filter(t => t.symbol === symbol)
-                                        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-                                        .map(t => {
-                                            const dateStr = t.timestamp.substring(0, 10);
-                                            return {
-                                                time: dateStr,
-                                                position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
-                                                color: t.action === 'BUY' ? '#3fb950' : '#f85149',
-                                                shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
-                                                text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
-                                            };
-                                        })
-                                        .filter(m => validTimes.has(m.time));
-                                    markers = markers.concat(realMarkers);
+                                        .forEach(t => {
+                                            const dateStr = t.timestamp.substring(0, 10).trim();
+                                            let targetTime = null;
+                                            
+                                            if (validData.length > 0) {
+                                                const firstBar = validData[0].time;
+                                                if (typeof firstBar === 'number') {
+                                                    // 分K模式 (Unix Timestamp)
+                                                    const kBar = validData.find(d => {
+                                                        const dDate = new Date(d.time * 1000);
+                                                        const dStr = dDate.getFullYear() + '-' + String(dDate.getMonth() + 1).padStart(2, '0') + '-' + String(dDate.getDate()).padStart(2, '0');
+                                                        return dStr === dateStr;
+                                                    });
+                                                    targetTime = kBar ? kBar.time : null;
+                                                } else {
+                                                    // 日K模式
+                                                    targetTime = dateStr;
+                                                }
+                                            }
+
+                                            if (targetTime !== null && validTimes.has(formatChartTime(targetTime))) {
+                                                markers.push({
+                                                    time: targetTime,
+                                                    position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
+                                                    color: t.action === 'BUY' ? '#3fb950' : '#f85149',
+                                                    shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
+                                                    text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
+                                                });
+                                            }
+                                        });
                                 }
 
-                                // 2. 回測策略的買賣標記 (當開啟回測且有結果時)
+                                // 2. 回測策略的買賣標記
                                 if (backtestEnabled.value && backtestResults.value) {
                                     Object.entries(backtestResults.value).forEach(([name, res]) => {
                                         if (res.trades) {
-                                            const btMarkers = res.trades.map(t => {
-                                                let dateStr = t.time;
-                                                if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
-                                                return {
-                                                    time: dateStr,
-                                                    position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
-                                                    color: name === 'RSI' ? '#60a5fa' : '#c084fc',
-                                                    shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
-                                                    text: `${name} ${t.side === 'buy' ? 'B' : 'S'}`
-                                                };
-                                            }).filter(m => validTimes.has(m.time));
-                                            markers = markers.concat(btMarkers);
+                                            res.trades.forEach(t => {
+                                                let targetTime = null;
+                                                const btDateStr = t.time.substring(0, 10).trim();
+                                                
+                                                if (validData.length > 0) {
+                                                    const firstBar = validData[0].time;
+                                                    if (typeof firstBar === 'number') {
+                                                        // 分K
+                                                        targetTime = Math.floor(new Date(t.time).getTime() / 1000);
+                                                    } else {
+                                                        // 日K
+                                                        targetTime = btDateStr;
+                                                    }
+                                                }
+
+                                                if (targetTime !== null && validTimes.has(formatChartTime(targetTime))) {
+                                                    markers.push({
+                                                        time: targetTime,
+                                                        position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
+                                                        color: name === 'RSI' ? '#60a5fa' : '#c084fc',
+                                                        shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                                                        text: `${name} ${t.side === 'buy' ? 'B' : 'S'}`
+                                                    });
+                                                }
+                                            });
                                         }
                                     });
                                 }
                                 
-                                candleSeries.setMarkers(markers.sort((a, b) => new Date(a.time) - new Date(b.time)));
+                                console.log('Final Markers Count:', markers.length);
+                                if (markers.length > 0) console.log('Sample Marker:', JSON.stringify(markers[0]));
+                                console.log('--- MARKER DEBUG END ---');
+                                // 修正日K模式下的時間格式，如果是物件則還原
+                                const finalMarkers = markers.map(m => {
+                                    const firstBarTime = validData[0].time;
+                                    if (typeof firstBarTime !== 'number' && typeof m.time === 'string' && m.time.includes('-')) {
+                                        const [year, month, day] = m.time.split('-').map(Number);
+                                        return { ...m, time: { year, month, day } };
+                                    }
+                                    return m;
+                                });
+                                candleSeries.setMarkers(finalMarkers.sort((a, b) => {
+                                    const getTime = (v) => {
+                                        const f = formatChartTime(v);
+                                        return f.includes('-') ? new Date(f).getTime() : Number(f);
+                                    };
+                                    return getTime(a.time) - getTime(b.time);
+                                }));
                             };
 
                             updateMarkers();
-                            // 將 updateMarkers 存入 window 以便 runBacktest 呼叫
-                            window._lastData = data;
+                            window._lastValidData = validData; // 改用過濾後的資料
                             window._updateChartMarkers = updateMarkers;
                             if(sma5Series) sma5Series.setData(sma5Data);
                             if(sma10Series) sma10Series.setData(sma10Data);
