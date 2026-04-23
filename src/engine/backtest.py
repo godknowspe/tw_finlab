@@ -92,5 +92,6 @@ class BacktestEngine:
             'total_return': total_return,
             'max_drawdown': max_dd,
             'final_equity': df['total_equity'].iloc[-1],
-            'equity_curve': df
+            'equity_curve': df,
+            'trades': self.trades
         }

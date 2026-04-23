@@ -593,11 +593,24 @@ def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d"):
                     "value": round(row['total_equity'], 2)
                 })
             
+            # 格式化交易紀錄
+            trade_markers = []
+            for t in res.get('trades', []):
+                ts = t['date']
+                time_str = ts.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ts, 'strftime') else str(ts)
+                trade_markers.append({
+                    "time": time_str,
+                    "side": t['side'],
+                    "price": t['price'],
+                    "size": t['size']
+                })
+
             results_map[s_name] = {
                 "total_return_pct": round(res['total_return'] * 100, 2),
                 "max_drawdown_pct": round(res['max_drawdown'] * 100, 2),
                 "final_equity": int(res['final_equity']),
-                "chart_data": chart_data
+                "chart_data": chart_data,
+                "trades": trade_markers
             }
         
     return results_map

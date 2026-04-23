@@ -1043,6 +1043,7 @@
                         backtestResults.value = {};
                         Object.values(backtestSeriesList).forEach(s => s.setData([]));
                         if (symbolEquitySeries) symbolEquitySeries.applyOptions({ visible: true });
+                        if (window._updateChartMarkers) window._updateChartMarkers(); // 這裡也要觸發，以恢復 PnL 標記
                         return;
                     }
                     isBacktesting.value = true;
@@ -1072,6 +1073,8 @@
                             Object.keys(backtestSeriesList).forEach(name => {
                                 if (!result[name]) backtestSeriesList[name].setData([]);
                             });
+                            // 更新圖表上的買賣標記
+                            if (window._updateChartMarkers) window._updateChartMarkers();
                         }
                     } catch(e) { console.error(e); }
                     finally { isBacktesting.value = false; }
@@ -1176,25 +1179,56 @@
                             volumeSeries.setData(volData);
                             symbolEquitySeries.setData(pnlData);
                             
-                            // 標注進出場與加減碼
-                            if (portfolio.value && portfolio.value.trades) {
+                            const updateMarkers = () => {
+                                let markers = [];
                                 const validTimes = new Set(data.map(d => d.time));
-                                const markers = portfolio.value.trades
-                                    .filter(t => t.symbol === symbol)
-                                    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-                                    .map(t => {
-                                        const dateStr = t.timestamp.substring(0, 10);
-                                        return {
-                                            time: dateStr,
-                                            position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
-                                            color: t.action === 'BUY' ? '#3fb950' : '#f85149',
-                                            shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
-                                            text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
-                                        };
-                                    })
-                                    .filter(m => validTimes.has(m.time)); // 避免標記在未開盤日產生空白 K 棒
-                                candleSeries.setMarkers(markers);
-                            }
+
+                                // 1. 真實持倉的買賣標記 (PnL 相關)
+                                if (portfolio.value && portfolio.value.trades) {
+                                    const realMarkers = portfolio.value.trades
+                                        .filter(t => t.symbol === symbol)
+                                        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                                        .map(t => {
+                                            const dateStr = t.timestamp.substring(0, 10);
+                                            return {
+                                                time: dateStr,
+                                                position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
+                                                color: t.action === 'BUY' ? '#3fb950' : '#f85149',
+                                                shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
+                                                text: t.action === 'BUY' ? `買 ${t.shares}` : `賣 ${t.shares}`
+                                            };
+                                        })
+                                        .filter(m => validTimes.has(m.time));
+                                    markers = markers.concat(realMarkers);
+                                }
+
+                                // 2. 回測策略的買賣標記 (當開啟回測且有結果時)
+                                if (backtestEnabled.value && backtestResults.value) {
+                                    Object.entries(backtestResults.value).forEach(([name, res]) => {
+                                        if (res.trades) {
+                                            const btMarkers = res.trades.map(t => {
+                                                let dateStr = t.time;
+                                                if (dateStr.includes(' ')) dateStr = dateStr.split(' ')[0];
+                                                return {
+                                                    time: dateStr,
+                                                    position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
+                                                    color: name === 'RSI' ? '#60a5fa' : '#c084fc',
+                                                    shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                                                    text: `${name} ${t.side === 'buy' ? 'B' : 'S'}`
+                                                };
+                                            }).filter(m => validTimes.has(m.time));
+                                            markers = markers.concat(btMarkers);
+                                        }
+                                    });
+                                }
+                                
+                                candleSeries.setMarkers(markers.sort((a, b) => new Date(a.time) - new Date(b.time)));
+                            };
+
+                            updateMarkers();
+                            // 將 updateMarkers 存入 window 以便 runBacktest 呼叫
+                            window._lastData = data;
+                            window._updateChartMarkers = updateMarkers;
                             if(sma5Series) sma5Series.setData(sma5Data);
                             if(sma10Series) sma10Series.setData(sma10Data);
                             if(smaSeries) smaSeries.setData(smaData);
