@@ -451,6 +451,18 @@ def add_watchlist(item: WatchlistItem):
     if not any(w["symbol"] == item.symbol for w in app_state["watchlist"]):
         name = item.name
         ref_price = item.ref_price
+        market = item.market
+        
+        # 即使使用者選了，我們也自動校正一次，增加魯棒性
+        if item.symbol.isdigit():
+            market = "TW"
+        else:
+            # 判斷是否為台股代號格式 (例如 2330.TW 或 2330.TWO)
+            if ".TW" in item.symbol.upper() or ".TWO" in item.symbol.upper():
+                market = "TW"
+            else:
+                market = "US"
+
         if not name or not ref_price:
             import yfinance as yf
             yf_symbol = f"{item.symbol}.TW" if item.symbol.isdigit() else item.symbol
@@ -462,11 +474,26 @@ def add_watchlist(item: WatchlistItem):
                 if not name:
                     info = tk.info
                     name = info.get("shortName", item.symbol)
+                    
+                    # 雙重檢查：透過 yfinance 的資訊來修正市場
+                    # 如果 exchange 結尾是 'NMS', 'NYQ', 'PCX' (美股主要交易所)
+                    exchange = info.get("exchange", "")
+                    if exchange in ['NMS', 'NYQ', 'PCX', 'NGM', 'NCM']:
+                        market = "US"
+                    elif exchange in ['TAE', 'TWO']:
+                        market = "TW"
             except:
                 pass
+        
         if not name: name = item.symbol
         if not ref_price or ref_price == 0.0: ref_price = 1.0
-        app_state["watchlist"].append({"symbol": item.symbol, "name": name, "ref_price": round(ref_price, 2), "market": item.market})
+        
+        app_state["watchlist"].append({
+            "symbol": item.symbol, 
+            "name": name, 
+            "ref_price": round(ref_price, 2), 
+            "market": market
+        })
     save_app_state(app_state)
     return {"status": "success", "message": f"{item.symbol} 已加入自選股！"}
 
