@@ -21,6 +21,11 @@ class DailyPrice(Base):
         UniqueConstraint('stock_id', 'date', 'interval', name='uq_stock_date_interval'),
     )
 
+class AppConfig(Base):
+    __tablename__ = 'app_config'
+    key = Column(String(50), primary_key=True)
+    value = Column(String(500), nullable=False)
+
 def get_engine(db_path=None):
     if db_path is None:
         # 預設儲存在專案根目錄的 data/tw_finlab.db

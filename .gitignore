@@ -73,3 +73,9 @@ data/*.db
 *.swo
 web.log
 patch_*.py
+
+# OpenClaw / Local Files
+node_modules/
+shioaji.log
+src/web/app_state.json
+src/test_shioaji.py

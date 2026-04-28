@@ -381,7 +381,62 @@
     </div>
 
 
-    <div v-if="modalType" class="absolute inset-0 z-50 bg-black/70 flex items-center justify-center">
+    <div v-if="modalType === 'config'" class="absolute inset-0 z-50 bg-black/70 flex items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-96 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <h2 class="text-white font-bold mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                資料源與系統設定
+            </h2>
+            <div class="space-y-4">
+                <div class="bg-gray-900/50 p-3 rounded border border-gray-700">
+                    <h3 class="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">數據來源配置 (Data Sources)</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[10px] text-gray-400 mb-1">K線/歷史數據 (K-Line Source)</label>
+                            <select v-model="configForm.kline" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-1.5 rounded text-xs focus:outline-none focus:border-blue-500">
+                                <option value="yfinance">yfinance (美股/台股延遲)</option>
+                                <option value="FinMind">FinMind (台股歷史)</option>
+                                <option value="Shioaji">Shioaji (永豐金 - 台股即時)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-400 mb-1">盤中即時報價 (Real-time Source)</label>
+                            <select v-model="configForm.realtime" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-1.5 rounded text-xs focus:outline-none focus:border-blue-500">
+                                <option value="yfinance">yfinance (全球/延遲)</option>
+                                <option value="FinMind">FinMind (台股)</option>
+                                <option value="Shioaji">Shioaji (永豐金 - 台股逐筆)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="configForm.kline === 'Shioaji' || configForm.realtime === 'Shioaji'" class="bg-blue-900/10 p-3 rounded border border-blue-800/30">
+                    <h3 class="text-xs font-bold text-blue-400 mb-2 flex items-center gap-1">
+                        <img src="https://www.sinotrade.com.tw/favicon.ico" class="w-3 h-3 grayscale"> Shioaji API 配置
+                    </h3>
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-[10px] text-gray-400 mb-1">API Key</label>
+                            <input v-model="configForm.shioaji_api_key" type="password" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-gray-400 mb-1">API Secret (Secret Key)</label>
+                            <input v-model="configForm.shioaji_api_secret" type="password" class="w-full bg-gray-900 border border-gray-700 text-white px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div class="text-[9px] text-gray-500 italic mt-1">
+                            * 註：Shioaji 1.x+ 僅需 API Key 與 Secret Key 即可登入。
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 flex gap-3">
+                <button @click="modalType = null" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition-colors text-xs">取消</button>
+                <button @click="submitConfig" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded transition-colors font-bold text-xs">儲存設定</button>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="modalType && modalType !== 'config'" class="absolute inset-0 z-50 bg-black/70 flex items-center justify-center">
         <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 shadow-2xl">
             <h2 class="text-white font-bold mb-4">{{ modalType === 'watchlist' ? '加入自選股' : '新增交易紀錄' }}</h2>
             <div class="space-y-3">
@@ -448,9 +503,14 @@
 
     <!-- 右側邊欄：控制台 -->
     <div v-show="showRightPanel" class="w-72 panel-bg border-l border-line flex flex-col">
-        <div class="p-4 border-b border-line flex items-center gap-2">
-            <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-            <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
+        <div class="p-4 border-b border-line flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4" :class="portfolio.agent_state?.halted ? 'text-red' : 'text-green'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <span class="font-bold tracking-wider text-gray-400 text-xs">AGENT LOGIC</span>
+            </div>
+            <button @click="showConfigModal" class="text-gray-500 hover:text-white transition-colors" title="Settings">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            </button>
         </div>
 
         <div class="p-4 flex-1 overflow-y-auto space-y-6">
@@ -610,8 +670,42 @@
                 let dSeries = null;
                 const showKD = ref(false);
                 const showIndicatorMenu = ref(false);
-                const modalType = ref(null); // 'watchlist' or 'positions'
+                const modalType = ref(null); // 'watchlist' or 'positions' or 'config'
                 const modalForm = reactive({ symbol: '', name: '', ref_price: 0, action: 'BUY', shares: 0, price: 0, timestamp: '', market: 'TW', currency: 'TWD' });
+                const configForm = reactive({ kline: 'yfinance', realtime: 'FinMind', shioaji_api_key: '', shioaji_api_secret: '', shioaji_person_id: '', shioaji_password: '' });
+
+                const showConfigModal = async () => {
+                    try {
+                        const res = await fetch('/api/config');
+                        const data = await res.json();
+                        // 確保所有欄位都有值，避免 Vue 警告或丟失響應性
+                        configForm.kline = data.kline || 'yfinance';
+                        configForm.realtime = data.realtime || 'FinMind';
+                        configForm.shioaji_api_key = data.shioaji_api_key || '';
+                        configForm.shioaji_api_secret = data.shioaji_api_secret || '';
+                        configForm.shioaji_person_id = data.shioaji_person_id || '';
+                        configForm.shioaji_password = data.shioaji_password || '';
+                        modalType.value = 'config';
+                    } catch(e) { console.error(e); }
+                };
+
+                const submitConfig = async () => {
+                    try {
+                        console.log("Submitting config:", configForm);
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(configForm)
+                        });
+                        const result = await res.json();
+                        console.log("Submit result:", result);
+                        showToast(result.message, '⚙️');
+                        modalType.value = null;
+                        // Reload data to reflect source changes
+                        if (currentSymbol.value) loadChart(currentSymbol.value);
+                        await fetchPortfolio();
+                    } catch(e) { console.error("Submit Error:", e); }
+                };
 
                 const showToast = (msg, icon = '✅') => {
                     toastMessage.value = msg;
@@ -1477,7 +1571,7 @@
 
                 return {
                     sortableTW, sortableUS, watchlistTW, watchlistUS,
-                    showRightPanel, portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, showAddModal, submitModal, editWatchlist, delWatchlist, delTrade,
+                    showRightPanel, portfolio, settings, currentSymbol, currentInterval, currentQuote, changeInterval, activeTab, chartMode, equityValue, switchMode, showVOL, showSMA, showMACD, showRSI, showBB, showKD, showIndicatorMenu, toggleIndicator, modalType, modalForm, configForm, showAddModal, submitModal, showConfigModal, submitConfig, editWatchlist, delWatchlist, delTrade,
                     analysisData, loadAnalysis, loadChart, saveSettings, sendAction,
                     toastMessage, toastIcon, wsConnected,
                     selectedStrategies, backtestResults, runBacktest,

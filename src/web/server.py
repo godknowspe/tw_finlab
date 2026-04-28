@@ -1,4 +1,5 @@
 import json
+import os
 import uvicorn
 import yfinance as yf
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from src.data.fetcher import get_stock_data_df
+from src.data.models import AppConfig, get_engine, get_session, Base, DailyPrice
 import datetime
 import pandas as pd
 import os
@@ -35,13 +37,30 @@ def load_app_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                state = json.load(f)
+                # 確保 data_sources 存在，避免一開始 update_config 找不到 key
+                if "data_sources" not in state:
+                    state["data_sources"] = {
+                        "kline": "yfinance",
+                        "realtime": "FinMind",
+                        "shioaji_api_key": "",
+                        "shioaji_api_secret": "",
+                        "shioaji_person_id": "",
+                        "shioaji_password": ""
+                    }
+                return state
         except Exception as e:
             print("LOAD ERROR:", e)
-            pass
-            pass
     return {
         "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
+        "data_sources": {
+            "kline": "yfinance",
+            "realtime": "FinMind",
+            "shioaji_api_key": "",
+            "shioaji_api_secret": "",
+            "shioaji_person_id": "",
+            "shioaji_password": ""
+        },
         "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
         "watchlist": [
             {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
@@ -73,8 +92,67 @@ def save_app_state(state):
 # 保護全域狀態的 Lock，避免 race condition
 _state_lock = asyncio.Lock()
 
+def get_db_config():
+    """從資料庫讀取設定"""
+    try:
+        engine = get_engine()
+        Base.metadata.create_all(engine)
+        session = get_session(engine)
+        configs = session.query(AppConfig).all()
+        config_dict = {c.key: c.value for c in configs}
+        session.close()
+        return config_dict
+    except Exception as e:
+        print(f"DB Config Error: {e}")
+        return {}
+
+def save_db_config(key, value):
+    """儲存設定到資料庫"""
+    try:
+        engine = get_engine()
+        # 確保資料表存在
+        Base.metadata.create_all(engine)
+        session = get_session(engine)
+        config = session.query(AppConfig).filter(AppConfig.key == key).first()
+        if config:
+            config.value = str(value)
+        else:
+            session.add(AppConfig(key=key, value=str(value)))
+        session.commit()
+        session.close()
+    except Exception as e:
+        print(f"DB Save Config Error for {key}: {e}")
+
 app_state = load_app_state()
+# 合併 DB 設定到 app_state
+db_configs = get_db_config()
+if "data_sources" not in app_state:
+    app_state["data_sources"] = {
+        "kline": "yfinance",
+        "realtime": "FinMind",
+        "shioaji_api_key": "",
+        "shioaji_api_secret": "",
+        "shioaji_person_id": "",
+        "shioaji_password": ""
+    }
+
+# 同步 DB 設定
+for k, v in db_configs.items():
+    if k.startswith("ds_"):
+        key_name = k[3:]
+        app_state["data_sources"][key_name] = v
+        # 同時寫回 app_state 確保下次讀取 json 也有
+        save_app_state(app_state)
+
 print("DEBUG: Initial app_state loaded, watchlist symbols:", [w["symbol"] for w in app_state["watchlist"]])
+
+class ConfigUpdate(BaseModel):
+    kline: str
+    realtime: str
+    shioaji_api_key: str = ""
+    shioaji_api_secret: str = ""
+    shioaji_person_id: str = ""
+    shioaji_password: str = ""
 
 class SettingsUpdate(BaseModel):
     take_profit_pct: float
@@ -82,6 +160,24 @@ class SettingsUpdate(BaseModel):
 
 class ActionRequest(BaseModel):
     action: str
+
+from src.api.shioaji_api import ShioajiClient, fetch_shioaji_kbars, fetch_shioaji_quote
+from src.api.finmind_api import fetch_taiwan_stock_daily
+from src.api.yfinance_api import fetch_us_stock_daily
+
+def get_shioaji_api():
+    ds = app_state.get("data_sources", {})
+    if not ds.get("shioaji_api_key"):
+        return None
+    try:
+        client = ShioajiClient()
+        return client.get_api(
+            api_key=ds["shioaji_api_key"],
+            api_secret=ds["shioaji_api_secret"]
+        )
+    except Exception as e:
+        print(f"Shioaji Login Error: {e}")
+        return None
 
 @app.get("/")
 async def root(request: Request):
@@ -98,34 +194,43 @@ async def root(request: Request):
 @app.get("/api/kbars/{stock_id}")
 def get_kbars(stock_id: str, interval: str = "1d"):
     today = datetime.date.today()
-    
-    # 決定資料起始日 (10年資料)
     start_date = (today - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
+    end_date = today.strftime('%Y-%m-%d')
+    
+    ds = app_state.get("data_sources", {})
+    source = ds.get("kline", "yfinance")
     
     try:
-        import yfinance as yf
-        yf_symbol = stock_id
-        if stock_id.isdigit():
-            yf_symbol = f"{stock_id}.TW"
+        df = pd.DataFrame()
+        
+        if source == "Shioaji" and stock_id.isdigit():
+            api = get_shioaji_api()
+            if api:
+                df = fetch_shioaji_kbars(api, stock_id, start_date, end_date)
+        
+        elif source == "FinMind" and stock_id.isdigit():
+            df = fetch_taiwan_stock_daily(stock_id, start_date, end_date)
             
-        if interval in ['15m', '30m', '60m']:
-            period = '730d' if interval == '60m' else '60d'
-            df = yf.download(yf_symbol, interval=interval, period=period, progress=False)
-        else:
-            df = yf.download(yf_symbol, interval=interval, period='10y', progress=False)
+        # Fallback to yfinance if df is still empty or not台股
+        if df.empty:
+            yf_symbol = f"{stock_id}.TW" if stock_id.isdigit() else stock_id
+            if interval in ['15m', '30m', '60m']:
+                period = '730d' if interval == '60m' else '60d'
+                df = yf.download(yf_symbol, interval=interval, period=period, progress=False)
+            else:
+                df = yf.download(yf_symbol, interval=interval, period='10y', progress=False)
             
+            if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)
+                df = df.dropna(subset=['Close'])
+                df.index.name = 'date'
+                df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+
         if df.empty:
             return []
-            
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
-            
-        df = df.dropna(subset=['Close'])
-        df.index.name = 'date'
-        df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
-        
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
 
         # 非同步同步回資料庫 (只針對日線資料)
         if interval == "1d":
@@ -571,6 +676,34 @@ def update_settings(settings: SettingsUpdate):
     save_app_state(app_state)
     return {"status": "success", "message": "策略參數已更新！"}
 
+@app.get("/api/config")
+def get_config():
+    return app_state.get("data_sources", {})
+
+@app.post("/api/config")
+def update_config(config: ConfigUpdate):
+    if "data_sources" not in app_state:
+        app_state["data_sources"] = {}
+        
+    ds = app_state["data_sources"]
+    ds["kline"] = config.kline
+    ds["realtime"] = config.realtime
+    ds["shioaji_api_key"] = config.shioaji_api_key
+    ds["shioaji_api_secret"] = config.shioaji_api_secret
+    ds["shioaji_person_id"] = config.shioaji_person_id
+    ds["shioaji_password"] = config.shioaji_password
+    
+    # 儲存到 DB (加 ds_ 前綴)
+    try:
+        for k, v in ds.items():
+            save_db_config(f"ds_{k}", v)
+        print("DEBUG: Config saved to DB successfully")
+    except Exception as e:
+        print(f"DEBUG: Failed to save config to DB: {e}")
+        
+    save_app_state(app_state)
+    return {"status": "success", "message": "資料源設定已更新！"}
+
 @app.post("/api/action")
 def perform_action(req: ActionRequest):
     action = req.action
@@ -741,14 +874,41 @@ def fetch_bulk_prices(symbols):
 
     return res
 
+def fetch_prices_by_source(symbols):
+    ds = app_state.get("data_sources", {})
+    source = ds.get("realtime", "yfinance")
+    res = {}
+    
+    tw_syms = [s for s in symbols if s.isdigit()]
+    other_syms = [s for s in symbols if not s.isdigit()]
+    
+    # Handle Shioaji for Taiwan stocks
+    if source == "Shioaji" and tw_syms:
+        api = get_shioaji_api()
+        if api:
+            try:
+                contracts = [api.Contracts.Stocks[s] for s in tw_syms if api.Contracts.Stocks[s]]
+                snapshots = api.snapshots(contracts)
+                for snap in snapshots:
+                    res[snap.code] = float(snap.close)
+            except Exception as e:
+                print(f"Shioaji Realtime Error: {e}")
+
+    # Handle FinMind (though FinMind doesn't have true realtime snapshots as discussed, 
+    # we'll fallback or use their latest day data if configured)
+    
+    # Use yfinance for any symbols not yet fetched
+    remaining = [s for s in symbols if s not in res]
+    if remaining:
+        yf_prices = fetch_bulk_prices(remaining) # Keep existing yf logic as fallback
+        res.update(yf_prices)
+        
+    return res
+
 # Global WebSocket endpoint for real-time updates of the whole watchlist
 @app.websocket("/api/ws/watchlist")
 async def websocket_watchlist(websocket: WebSocket):
     await websocket.accept()
-    
-    # Use UTC to determine if TW/US is open, avoiding timezone complex imports
-    # TW: 01:00 UTC - 05:30 UTC (09:00 - 13:30 TST)
-    # US: 13:30 UTC - 20:00 UTC (09:30 - 16:00 EST)
     
     last_prices = {}
     last_broadcast_time = {}
@@ -760,7 +920,6 @@ async def websocket_watchlist(websocket: WebSocket):
             is_weekday = now_tw.weekday() < 5
             time_val_tw = now_tw.hour * 100 + now_tw.minute
             
-            # Roughly check open times
             tw_open = is_weekday and (830 <= time_val_tw <= 1340)
             us_open = is_weekday and (time_val_tw >= 2130 or time_val_tw <= 500)
             
@@ -770,13 +929,11 @@ async def websocket_watchlist(websocket: WebSocket):
                 market = w.get("market", "TW")
                 is_open = (market == "TW" and tw_open) or (market == "US" and us_open)
                 
-                # 如果開盤中，或者我們還沒有這檔股票的任何報價，就加入抓取清單
                 if is_open or sym not in last_prices:
                     symbols_to_fetch.append(sym)
                 
             if symbols_to_fetch:
-                # print("Fetching prices for:", symbols_to_fetch)
-                prices = await asyncio.to_thread(fetch_bulk_prices, symbols_to_fetch)
+                prices = await asyncio.to_thread(fetch_prices_by_source, symbols_to_fetch)
                 
                 updates = []
                 for sym, price in prices.items():

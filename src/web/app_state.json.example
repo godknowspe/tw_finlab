@@ -1,0 +1,26 @@
+{
+    "settings": {
+        "take_profit_pct": 10.0,
+        "stop_loss_pct": 5.0
+    },
+    "agent_state": {
+        "target": "2330.TW",
+        "phase": "Monitoring",
+        "exposure": "0%",
+        "halted": false
+    },
+    "watchlist": [
+        { "symbol": "2330", "name": "TSMC", "ref_price": 800.0, "market": "TW" },
+        { "symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.0, "market": "US" }
+    ],
+    "cash": { "TWD": 1000000.0, "USD": 10000.0 },
+    "trades": [],
+    "data_sources": {
+        "kline": "yfinance",
+        "realtime": "FinMind",
+        "shioaji_api_key": "",
+        "shioaji_api_secret": "",
+        "shioaji_person_id": "",
+        "shioaji_password": ""
+    }
+}
