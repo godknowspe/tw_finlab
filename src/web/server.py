@@ -80,11 +80,21 @@ def load_app_state():
     }
 
 def save_app_state(state):
-    """原子性寫入，讀寫路徑統一使用 STATE_FILE"""
+    """原子性寫入，排除敏感的資料源設定不存入 JSON"""
     tmp_path = STATE_FILE + ".tmp"
     try:
+        # 建立一個複本，移除敏感資訊後再儲存
+        import copy
+        state_to_save = copy.deepcopy(state)
+        if "data_sources" in state_to_save:
+            # 我們只移除金鑰資訊，保留 source 選擇 (kline/realtime)
+            ds = state_to_save["data_sources"]
+            for secret_key in ["shioaji_api_key", "shioaji_api_secret", "shioaji_person_id", "shioaji_password"]:
+                if secret_key in ds:
+                    ds[secret_key] = "" 
+        
         with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(state, f, ensure_ascii=False, indent=4)
+            json.dump(state_to_save, f, ensure_ascii=False, indent=4)
         os.replace(tmp_path, STATE_FILE)
     except Exception as e:
         print(f"SAVE ERROR: {e}")
