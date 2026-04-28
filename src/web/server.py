@@ -1,6 +1,19 @@
 import json
 import uvicorn
+import yfinance as yf
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+
+# 修正 yfinance 文件描述符洩漏問題 (Errno 24 Too many open files)
+# 將快取路徑設為 tmp 資料夾，避免與系統快取衝突，並嘗試解決洩漏
+try:
+    import tempfile
+    yf_cache_dir = os.path.join(tempfile.gettempdir(), "yfinance_cache")
+    if not os.path.exists(yf_cache_dir):
+        os.makedirs(yf_cache_dir, exist_ok=True)
+    yf.set_tz_cache_location(yf_cache_dir)
+except Exception:
+    pass
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
