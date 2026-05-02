@@ -1232,49 +1232,49 @@
                             const validData = data.filter(d => d.open !== null && d.high !== null && d.low !== null && d.close !== null);
                             candleSeries.setData(validData);
                             
-                            // 準備指標資料
-                            const sma5Data = [];
-                            const sma10Data = [];
-                            const smaData = [];
-                            const macdData = [];
-                            const signalData = [];
-                            const histData = [];
-                            const volData = [];
-                            const rsiData = [];
-                            const bbUpData = [];
-                            const bbMidData = [];
-                            const bbLowData = [];
-                            const kData = [];
-                            const dData = [];
-                            
-                            pnlData = [];
-                            data.forEach(d => {
-                                if(d.total_pnl !== undefined && d.total_pnl !== null) pnlData.push({ time: d.time, value: d.total_pnl });
-                                if(d.sma5 !== null && d.sma5 !== undefined) sma5Data.push({ time: d.time, value: d.sma5 });
-                                if(d.sma10 !== null && d.sma10 !== undefined) sma10Data.push({ time: d.time, value: d.sma10 });
-                                if(d.sma20 !== null && d.sma20 !== undefined) smaData.push({ time: d.time, value: d.sma20 });
-                                if(d.macd !== null) macdData.push({ time: d.time, value: d.macd });
-                                if(d.signal !== null) signalData.push({ time: d.time, value: d.signal });
-                                if(d.histogram !== null) histData.push({ 
-                                    time: d.time, 
-                                    value: d.histogram, 
-                                    color: d.histogram >= 0 ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)'
-                                });
-                                if(d.value !== null) volData.push({
-                                    time: d.time,
-                                    value: d.value,
-                                    color: d.close >= d.open ? 'rgba(63, 185, 80, 0.4)' : 'rgba(248, 81, 73, 0.4)'
-                                });
-                                if(d.rsi !== null) rsiData.push({ time: d.time, value: d.rsi });
-                                if(d.bb_up !== null) bbUpData.push({ time: d.time, value: d.bb_up });
-                                if(d.bb_mid !== null) bbMidData.push({ time: d.time, value: d.bb_mid });
-                                if(d.bb_low !== null) bbLowData.push({ time: d.time, value: d.bb_low });
-                                if(typeof d.k === "number" && !isNaN(d.k)) kData.push({ time: d.time, value: d.k });
-                                if(typeof d.d === "number" && !isNaN(d.d)) dData.push({ time: d.time, value: d.d });
-                            });
-                            
-                            volumeSeries.setData(volData);
-                            symbolEquitySeries.setData(pnlData);
+                // 準備指標資料
+                const sma5Data = [];
+                const sma10Data = [];
+                const smaData = [];
+                const macdData = [];
+                const signalData = [];
+                const histData = [];
+                const volData = [];
+                const rsiData = [];
+                const bbUpData = [];
+                const bbMidData = [];
+                const bbLowData = [];
+                const kData = [];
+                const dData = [];
+                
+                pnlData = [];
+                validData.forEach(d => {
+                    if(d.total_pnl !== undefined && d.total_pnl !== null) pnlData.push({ time: d.time, value: d.total_pnl });
+                    if(d.sma5 !== null && d.sma5 !== undefined) sma5Data.push({ time: d.time, value: d.sma5 });
+                    if(d.sma10 !== null && d.sma10 !== undefined) sma10Data.push({ time: d.time, value: d.sma10 });
+                    if(d.sma20 !== null && d.sma20 !== undefined) smaData.push({ time: d.time, value: d.sma20 });
+                    if(d.macd !== null) macdData.push({ time: d.time, value: d.macd });
+                    if(d.signal !== null) signalData.push({ time: d.time, value: d.signal });
+                    if(d.histogram !== null) histData.push({ 
+                        time: d.time, 
+                        value: d.histogram, 
+                        color: d.histogram >= 0 ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)'
+                    });
+                    if(d.value !== null) volData.push({
+                        time: d.time,
+                        value: d.value,
+                        color: d.close >= d.open ? 'rgba(63, 185, 80, 0.4)' : 'rgba(248, 81, 73, 0.4)'
+                    });
+                    if(d.rsi !== null) rsiData.push({ time: d.time, value: d.rsi });
+                    if(d.bb_up !== null) bbUpData.push({ time: d.time, value: d.bb_up });
+                    if(d.bb_mid !== null) bbMidData.push({ time: d.time, value: d.bb_mid });
+                    if(d.bb_low !== null) bbLowData.push({ time: d.time, value: d.bb_low });
+                    if(typeof d.k === "number" && !isNaN(d.k)) kData.push({ time: d.time, value: d.k });
+                    if(typeof d.d === "number" && !isNaN(d.d)) dData.push({ time: d.time, value: d.d });
+                });
+                
+                volumeSeries.setData(volData);
+                symbolEquitySeries.setData(pnlData);
                             
                             const updateMarkers = () => {
                                 let markers = [];
