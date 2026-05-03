@@ -1,10 +1,14 @@
 import yfinance as yf
 import pandas as pd
 from typing import Optional
+from loguru import logger
 from .base import BaseDataProvider
+from src.utils.retry import retry
 
 class YFinanceProvider(BaseDataProvider):
+    @retry(max_attempts=3, delay=2, backoff=2)
     def fetch_kbars(self, stock_id: str, start_date: str, end_date: str, interval: str = "1d") -> pd.DataFrame:
+        logger.info(f"Fetching kbars for {stock_id} from {start_date} to {end_date} (interval: {interval})")
         # yfinance 的股票代號處理
         if stock_id.startswith("^"):
             ticker_id = stock_id

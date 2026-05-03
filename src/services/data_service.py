@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
 from src.data.models import DailyPrice
+from loguru import logger
 import pandas as pd
 import numpy as np
 import datetime
@@ -10,6 +11,7 @@ class DataService:
         self.db = db_session
 
     def get_stock_data_df(self, stock_id: str, start_date: str = None, end_date: str = None, interval: str = '1d') -> pd.DataFrame:
+        logger.debug(f"Querying database for {stock_id} ({interval})")
         stmt = select(DailyPrice).where(
             and_(
                 DailyPrice.stock_id == stock_id,
@@ -108,6 +110,7 @@ class DataService:
         
         try:
             self.db.commit()
+            logger.info(f"Saved {len(df)} bars for {stock_id} ({interval})")
         except Exception as e:
             self.db.rollback()
-            print(f"Error during commit for {stock_id}: {e}")
+            logger.error(f"Error during commit for {stock_id}: {e}")

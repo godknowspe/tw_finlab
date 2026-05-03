@@ -13,6 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from loguru import logger
+
+# Configure loguru to write to a file as well
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
+logger.add(LOG_FILE, rotation="10 MB", retention="10 days", level="INFO")
 
 # Fix yfinance file descriptor leak
 try:
@@ -38,8 +43,8 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../frontend/dist"))
 
 if os.path.exists(frontend_dist):
+    logger.info(f"Serving modern frontend from {frontend_dist}")
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # --- Dependency ---
 def get_db():
@@ -58,7 +63,7 @@ def load_app_state():
             with open(STATE_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print("LOAD ERROR:", e)
+            logger.error(f"LOAD ERROR: {e}")
     return {
         "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
         "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
@@ -78,7 +83,7 @@ def save_app_state(state):
             json.dump(state, f, ensure_ascii=False, indent=4)
         os.replace(tmp_path, STATE_FILE)
     except Exception as e:
-        print(f"SAVE ERROR: {e}")
+        logger.error(f"SAVE ERROR: {e}")
 
 app_state = load_app_state()
 
@@ -186,7 +191,7 @@ def get_kbars(stock_id: str, interval: str = "1d", db: Session = Depends(get_db)
                 data_service.save_stock_data(new_df, stock_id, interval)
                 df = data_service.get_stock_data_df(stock_id, interval=interval)
         except Exception as e:
-            print(f"Fetch Error: {e}")
+            logger.error(f"Fetch Error: {e}")
             if source != "yfinance":
                 try:
                     provider = ProviderFactory.get_provider("yfinance")
