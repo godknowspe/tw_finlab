@@ -56,10 +56,27 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
           <span>CHG%</span>
         </div>
       </div>
-      <div class="flex-1 overflow-y-auto custom-scrollbar">
+      <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
         <div v-if="marketStore.watchlistTW.length" class="text-[9px] text-gray-600 font-bold px-4 py-1.5 bg-black/10 uppercase tracking-widest">TW Market</div>
         <div ref="sortableTW">
           <div v-for="item in marketStore.watchlistTW" :key="item.symbol" 
+               @click="marketStore.setCurrentSymbol(item.symbol)"
+               :class="marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent'"
+               class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer transition-colors">
+            <div class="flex-1 min-w-0">
+               <div class="font-bold text-white text-sm">{{ item.symbol }}</div>
+               <div class="text-[10px] text-gray-500 truncate">{{ item.name }}</div>
+            </div>
+            <div class="text-right shrink-0">
+               <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
+               <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="marketStore.watchlistUS.length" class="text-[9px] text-gray-600 font-bold px-4 py-1.5 bg-black/10 uppercase tracking-widest mt-4">US Market</div>
+        <div ref="sortableUS">
+          <div v-for="item in marketStore.watchlistUS" :key="item.symbol" 
                @click="marketStore.setCurrentSymbol(item.symbol)"
                :class="marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent'"
                class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer transition-colors">
@@ -82,7 +99,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <span>SYMBOL / QTY</span>
         <span>UNREALIZED</span>
       </div>
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
         <div v-for="pos in portfolioStore.positions" :key="pos.symbol" 
              class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer"
              :class="marketStore.currentSymbol === pos.symbol ? 'bg-blue-900/20' : ''"
@@ -115,7 +132,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
           <Plus :size="12" class="text-gray-500 hover:text-white cursor-pointer" />
         </div>
       </div>
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
         <div v-for="trade in portfolioStore.trades" :key="trade.id" 
              class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50">
           <div>

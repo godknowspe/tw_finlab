@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import MarketSidebar from './components/MarketSidebar.vue';
 import TradingViewChart from './components/TradingViewChart.vue';
 import ControlPanel from './components/ControlPanel.vue';
+import AnalysisView from './components/AnalysisView.vue';
 import { useMarketStore } from './stores/market';
 import { usePortfolioStore } from './stores/portfolio';
 import { Layout } from 'lucide-vue-next';
@@ -33,8 +34,11 @@ onMounted(() => {
           <div class="flex bg-gray-900 rounded p-1 border border-gray-700 shadow-inner">
             <button @click="chartMode = 'symbol'" :class="chartMode === 'symbol' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'" class="px-3 py-0.5 text-[10px] rounded font-bold transition-colors uppercase">Symbol</button>
             <button @click="chartMode = 'equity'" :class="chartMode === 'equity' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'" class="px-3 py-0.5 text-[10px] rounded font-bold transition-colors uppercase">Equity</button>
+            <button @click="chartMode = 'analysis'" :class="chartMode === 'analysis' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'" class="px-3 py-0.5 text-[10px] rounded font-bold transition-colors uppercase">Analysis</button>
           </div>
-          <span class="font-bold text-sm text-white tracking-tight uppercase">{{ chartMode === 'symbol' ? (marketStore.currentSymbol || 'Select Symbol') : 'Portfolio Equity' }}</span>
+          <span class="font-bold text-sm text-white tracking-tight uppercase">
+            {{ chartMode === 'symbol' ? (marketStore.currentSymbol || 'Select Symbol') : (chartMode === 'equity' ? 'Portfolio Equity' : 'Trade Analysis Report') }}
+          </span>
         </div>
 
         <button @click="showRightPanel = !showRightPanel" class="text-gray-500 hover:text-white px-3 py-1.5 rounded bg-gray-800/50 border border-gray-700 text-[10px] transition-all flex items-center gap-2 hover:bg-gray-800">
@@ -43,9 +47,10 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Chart Area -->
-      <div class="flex-1 relative bg-black/20">
-        <TradingViewChart :mode="chartMode" :symbol="marketStore.currentSymbol" />
+      <!-- Content Area -->
+      <div class="flex-1 relative flex flex-col min-h-0 bg-black/20">
+        <TradingViewChart v-if="chartMode !== 'analysis'" :mode="chartMode" :symbol="marketStore.currentSymbol" />
+        <AnalysisView v-else />
       </div>
     </div>
 

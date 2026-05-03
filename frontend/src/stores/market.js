@@ -8,6 +8,12 @@ export const useMarketStore = defineStore('market', {
     currentInterval: '1d',
     wsConnected: false,
     ws: null,
+    // New states
+    selectedIndicators: ['SMA20'],
+    backtestResults: null,
+    isBacktesting: false,
+    backtestEnabled: false,
+    selectedStrategy: 'RSI'
   }),
   getters: {
     watchlistTW: (state) => state.watchlist.filter(i => i.market === 'TW'),
@@ -30,6 +36,31 @@ export const useMarketStore = defineStore('market', {
     },
     setCurrentSymbol(symbol) {
       this.currentSymbol = symbol;
+      // Clear backtest results when changing symbol to avoid confusion
+      this.backtestResults = null;
+    },
+    async runBacktest() {
+      if (!this.currentSymbol) return;
+      this.isBacktesting = true;
+      try {
+        const res = await axios.get(`/api/backtest/${this.currentSymbol}`, {
+          params: {
+            strategies: this.selectedStrategy,
+            interval: this.currentInterval
+          }
+        });
+        this.backtestResults = res.data[this.selectedStrategy];
+        this.backtestEnabled = true;
+      } catch (e) {
+        console.error('Backtest failed:', e);
+      } finally {
+        this.isBacktesting = false;
+      }
+    },
+    toggleIndicator(name) {
+      const idx = this.selectedIndicators.indexOf(name);
+      if (idx === -1) this.selectedIndicators.push(name);
+      else this.selectedIndicators.splice(idx, 1);
     },
     connectWebSocket() {
       if (this.ws) return;

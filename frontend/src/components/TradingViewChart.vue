@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref, watch, onUnmounted } from 'vue';
 import { createChart, CrosshairMode } from 'lightweight-charts';
+import { useMarketStore } from '@/stores/market';
 import axios from 'axios';
 
 const props = defineProps({
@@ -8,11 +9,18 @@ const props = defineProps({
   symbol: String
 });
 
+const marketStore = useMarketStore();
 const chartContainer = ref(null);
+const legendData = ref({
+  time: '--', open: '--', high: '--', low: '--', close: '--', v: '--', indicators: {}
+});
+
 let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
-let lineSeries = {}; // To store indicators like SMA, MACD, etc.
+let equitySeries = null;
+let indicatorSeries = {}; 
+let lastValidData = null;
 
 const initChart = () => {
   if (!chartContainer.value) return;
@@ -29,126 +37,191 @@ const initChart = () => {
       horzLines: { color: '#30363d' },
     },
     crosshair: {
-      mode: CrosshairMode.Magnet,
+      mode: CrosshairMode.Normal,
       vertLine: { labelBackgroundColor: '#1f6feb' },
       horzLine: { labelBackgroundColor: '#1f6feb' },
     },
-    timeScale: {
-      borderColor: '#30363d',
-      timeVisible: true,
-      secondsVisible: false,
-    },
-    rightPriceScale: {
-      borderColor: '#30363d',
-    },
+    timeScale: { borderColor: '#30363d', timeVisible: true },
+    rightPriceScale: { borderColor: '#30363d', autoScale: true },
+    leftPriceScale: { borderColor: '#30363d', visible: false },
     handleScroll: true,
     handleScale: true,
     autoSize: true,
   });
 
   candleSeries = chart.addCandlestickSeries({
-    upColor: '#3fb950',
-    downColor: '#f85149',
-    borderVisible: false,
-    wickUpColor: '#3fb950',
-    wickDownColor: '#f85149',
+    upColor: '#3fb950', downColor: '#f85149', borderVisible: false,
+    wickUpColor: '#3fb950', wickDownColor: '#f85149',
   });
 
   volumeSeries = chart.addHistogramSeries({
-    color: '#238636',
-    priceFormat: { type: 'volume' },
-    priceScaleId: '', // Overlay mode
+    color: '#238636', priceFormat: { type: 'volume' }, priceScaleId: '',
   });
 
   volumeSeries.priceScale().applyOptions({
     scaleMargins: { top: 0.8, bottom: 0 },
   });
+
+  chart.subscribeCrosshairMove(param => {
+    if (!param || !param.time || param.point.x < 0 || param.point.y < 0) {
+      if (lastValidData) legendData.value = lastValidData;
+      return;
+    }
+    
+    // Lightweight Charts v3.x uses seriesPrices
+    if (!param.seriesPrices) return;
+
+    const mainData = param.seriesPrices.get(candleSeries);
+    if (mainData) {
+      let timeStr = '';
+      if (typeof param.time === 'string') timeStr = param.time;
+      else if (typeof param.time === 'number') timeStr = new Date(param.time * 1000).toLocaleDateString();
+      else if (param.time.year) timeStr = `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`;
+
+      const newLegend = {
+        time: timeStr,
+        open: mainData.open?.toFixed(2),
+        high: mainData.high?.toFixed(2),
+        low: mainData.low?.toFixed(2),
+        close: mainData.close?.toFixed(2),
+        indicators: {}
+      };
+
+      const vol = param.seriesPrices.get(volumeSeries);
+      if (vol !== undefined) newLegend.v = (vol / 1000).toFixed(0) + 'K';
+
+      for (const [id, series] of Object.entries(indicatorSeries)) {
+        const val = param.seriesPrices.get(series);
+        if (val !== undefined && val !== null) {
+          newLegend.indicators[id] = val.toFixed(2);
+        }
+      }
+      legendData.value = newLegend;
+    }
+  });
+};
+
+const clearIndicators = () => {
+  for (const series of Object.values(indicatorSeries)) {
+    chart.removeSeries(series);
+  }
+  indicatorSeries = {};
+  chart.applyOptions({ leftPriceScale: { visible: false } });
 };
 
 const fetchData = async () => {
+  if (!chart) return;
   if (props.mode === 'symbol' && props.symbol) {
     try {
-      const res = await axios.get(`/api/kbars/${props.symbol}`);
+      const res = await axios.get(`/api/kbars/${props.symbol}`, {
+        params: { interval: marketStore.currentInterval }
+      });
       const data = res.data;
       if (!data || data.length === 0) return;
 
-      const candles = data.map(d => ({
-        time: d.time,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-      }));
-
-      const volumes = data.map(d => ({
-        time: d.time,
-        value: d.value,
-        color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)',
-      }));
+      const candles = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
+      const volumes = data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' }));
 
       candleSeries.setData(candles);
       volumeSeries.setData(volumes);
+      
+      clearIndicators();
+      const colors = { SMA5: '#f2c94c', SMA10: '#f2994a', SMA20: '#1f6feb', BB: '#9b51e0', RSI: '#56ccf2', MACD: '#2962FF' };
 
-      // Add SMA20 if available
-      if (data[0].sma20) {
-        if (!lineSeries.sma20) {
-          lineSeries.sma20 = chart.addLineSeries({ color: '#1f6feb', lineWidth: 1 });
+      marketStore.selectedIndicators.forEach(id => {
+        const key = id.toLowerCase();
+        if (id === 'BB' && data[0].bb_up !== undefined) {
+          indicatorSeries['BB_Up'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+          indicatorSeries['BB_Low'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+          indicatorSeries['BB_Mid'] = chart.addLineSeries({ color: '#56ccf2', lineWidth: 1, priceLineVisible: false });
+          indicatorSeries['BB_Up'].setData(data.map(d => ({ time: d.time, value: d.bb_up })));
+          indicatorSeries['BB_Low'].setData(data.map(d => ({ time: d.time, value: d.bb_low })));
+          indicatorSeries['BB_Mid'].setData(data.map(d => ({ time: d.time, value: d.bb_mid })));
+        } else if (id === 'MACD' && data[0].macd !== undefined) {
+          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.75, bottom: 0.05 } } });
+          indicatorSeries['MACD'] = chart.addLineSeries({ color: colors.MACD, lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
+          indicatorSeries['Signal'] = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
+          indicatorSeries['MACD'].setData(data.map(d => ({ time: d.time, value: d.macd })));
+          indicatorSeries['Signal'].setData(data.map(d => ({ time: d.time, value: d.signal })));
+        } else if (id === 'RSI' && data[0].rsi !== undefined) {
+          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.75, bottom: 0.05 } } });
+          indicatorSeries['RSI'] = chart.addLineSeries({ color: colors.RSI, lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
+          indicatorSeries['RSI'].setData(data.map(d => ({ time: d.time, value: d.rsi })));
+        } else if (data[0][key] !== undefined) {
+          indicatorSeries[id] = chart.addLineSeries({ color: colors[id] || '#56ccf2', lineWidth: 1, priceLineVisible: false });
+          indicatorSeries[id].setData(data.map(d => ({ time: d.time, value: d[key] })));
         }
-        lineSeries.sma20.setData(data.map(d => ({ time: d.time, value: d.sma20 })));
-      }
+      });
 
-      chart.timeScale().fitContent();
-    } catch (e) {
-      console.error('Failed to fetch chart data:', e);
-    }
+      if (marketStore.backtestEnabled && marketStore.backtestResults) {
+        candleSeries.setMarkers(marketStore.backtestResults.trades.map(t => ({
+          time: t.time, position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
+          color: t.side === 'buy' ? '#3fb950' : '#f85149', shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown', text: t.side.toUpperCase()
+        })));
+      } else { candleSeries.setMarkers([]); }
+
+      if (equitySeries) { chart.removeSeries(equitySeries); equitySeries = null; }
+      const barsToDisplay = 120;
+      if (data.length > barsToDisplay) {
+        chart.timeScale().setVisibleRange({ from: data[data.length - barsToDisplay].time, to: data[data.length - 1].time });
+      } else { chart.timeScale().fitContent(); }
+
+      // Default legend
+      const last = data[data.length - 1];
+      const initialIndicators = {};
+      Object.keys(indicatorSeries).forEach(id => {
+         let val = last[id.toLowerCase()];
+         if (id === 'BB_Up') val = last.bb_up;
+         if (id === 'BB_Low') val = last.bb_low;
+         if (id === 'BB_Mid') val = last.bb_mid;
+         if (id === 'Signal') val = last.signal;
+         if (val !== undefined && val !== null) initialIndicators[id] = val.toFixed(2);
+      });
+      lastValidData = {
+        time: last.time, open: last.open.toFixed(2), high: last.high.toFixed(2), low: last.low.toFixed(2), close: last.close.toFixed(2),
+        v: (last.value/1000).toFixed(0) + 'K', indicators: initialIndicators
+      };
+      legendData.value = lastValidData;
+    } catch (e) { console.error('Fetch Error:', e); }
   } else if (props.mode === 'equity') {
     try {
       const res = await axios.get('/api/equity');
       const data = res.data;
-      
-      // Clear symbol-related series
-      if (candleSeries) candleSeries.setData([]);
-      if (volumeSeries) volumeSeries.setData([]);
-      Object.values(lineSeries).forEach(s => s.setData([]));
-
-      if (!lineSeries.equity) {
-        lineSeries.equity = chart.addLineSeries({
-          color: '#1f6feb',
-          lineWidth: 2,
-          title: 'Total Equity',
-        });
-      }
-      lineSeries.equity.setData(data);
-      chart.timeScale().fitContent();
-    } catch (e) {
-      console.error('Failed to fetch equity data:', e);
-    }
+      candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
+      if (!equitySeries) equitySeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2 });
+      equitySeries.setData(data); chart.timeScale().fitContent();
+    } catch (e) { console.error('Equity Error:', e); }
   }
 };
 
-onMounted(() => {
-  initChart();
-  fetchData();
-});
-
-watch(() => props.symbol, () => {
-  if (props.mode === 'symbol') fetchData();
-});
-
-watch(() => props.mode, () => {
-  fetchData();
-});
-
-onUnmounted(() => {
-  if (chart) {
-    chart.remove();
-    chart = null;
-  }
-});
+onMounted(() => { initChart(); fetchData(); });
+watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled], () => fetchData(), { deep: true });
+onUnmounted(() => { if (chart) chart.remove(); });
 </script>
 
 <template>
-  <div class="relative w-full h-full">
+  <div class="relative w-full h-full select-none overflow-hidden">
     <div ref="chartContainer" class="absolute inset-0"></div>
+    <div class="absolute top-3 left-3 bg-black/80 backdrop-blur-md border border-white/10 p-3 rounded-lg text-[11px] z-10 pointer-events-none shadow-2xl flex flex-col gap-2 min-w-[220px]">
+      <div class="flex justify-between border-b border-white/10 pb-1.5">
+        <span class="text-white font-bold uppercase tracking-wider">{{ symbol }}</span>
+        <span class="text-gray-500 font-mono">{{ legendData.time }}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">OPEN</span><span class="text-white font-mono">{{ legendData.open }}</span></div>
+        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">HIGH</span><span class="text-white font-mono">{{ legendData.high }}</span></div>
+        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">LOW</span><span class="text-white font-mono">{{ legendData.low }}</span></div>
+        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">CLOSE</span><span :class="legendData.close >= legendData.open ? 'text-text-green' : 'text-text-red'" class="font-mono font-bold text-sm">{{ legendData.close }}</span></div>
+        <div class="flex justify-between col-span-2 border-t border-white/10 pt-1.5 mt-0.5">
+           <span class="text-gray-500 text-[10px]">VOLUME</span><span class="text-gray-300 font-mono">{{ legendData.v }}</span>
+        </div>
+      </div>
+      <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
+        <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">
+          <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id.replace('_', ' ') }}</span>
+          <span class="text-blue-400 font-mono font-bold">{{ val }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
