@@ -40,11 +40,13 @@ app = FastAPI(title="TW FinLab Quant Dashboard")
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_state.json")
 static_dir = os.path.join(os.path.dirname(__file__), "static")
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../frontend/dist"))
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
 
 if os.path.exists(frontend_dist):
     logger.info(f"Serving modern frontend from {frontend_dist}")
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+else:
+    logger.warning(f"Modern frontend not found at {frontend_dist}, falling back to static.")
 
 # --- Dependency ---
 def get_db():
@@ -338,10 +340,45 @@ def add_trade(item: TradeItem):
     return {"status": "success"}
 
 @app.delete("/api/trades/{trade_id}")
-def del_trade(trade_id: int):
-    app_state["trades"] = [t for t in app_state["trades"] if t["id"] != trade_id]
+def del_trade(trade_id: str): # 改為 str 因為 Shioaji ID 是字串
+    app_state["trades"] = [t for t in app_state["trades"] if str(t["id"]) != str(trade_id)]
     save_app_state(app_state)
     return {"status": "success"}
+
+@app.post("/api/sync/trades")
+def sync_trades(db: Session = Depends(get_db)):
+    config_service = ConfigService(db)
+    source = config_service.get_config("ds_realtime", "yfinance")
+    
+    if source != "Shioaji":
+        return {"status": "error", "message": "Only Shioaji source supports trade sync."}
+    
+    creds = {
+        "api_key": config_service.get_config("ds_shioaji_api_key", ""),
+        "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
+    }
+    
+    try:
+        from src.api.shioaji_api import fetch_shioaji_trades
+        shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
+        new_trades = fetch_shioaji_trades(shioaji_api)
+        
+        # 取得現有的 ID 列表避免重複
+        existing_ids = {str(t["id"]) for t in app_state["trades"]}
+        added_count = 0
+        
+        for nt in new_trades:
+            if str(nt["id"]) not in existing_ids:
+                app_state["trades"].append(nt)
+                added_count += 1
+        
+        if added_count > 0:
+            save_app_state(app_state)
+            
+        return {"status": "success", "message": f"Synced {added_count} new trades from Shioaji."}
+    except Exception as e:
+        logger.error(f"Sync error: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 from src.engine.backtest import BacktestEngine
