@@ -48,16 +48,20 @@ class YFinanceProvider(BaseDataProvider):
         if df.empty:
             return pd.DataFrame()
             
-        # 修正 yfinance 2.0+ 可能回傳 MultiIndex 欄位的問題
+        # 修正 yfinance 2.0+ / cache 可能回傳 MultiIndex 或 Price 等級欄位的問題
         if isinstance(df.columns, pd.MultiIndex):
-            # 優先嘗試取得 'Price' 等級的欄位
+            # 新版 yfinance (如 1.2.0+ 或 0.2.x) 常用 'Price' 作為 level 名稱
             if 'Price' in df.columns.names:
                 df.columns = df.columns.get_level_values('Price')
+            elif 'Ticker' in df.columns.names:
+                # 處理像測試中看到的 MultiIndex: [Price, Ticker]
+                df.columns = df.columns.get_level_values(0)
             else:
                 df.columns = df.columns.get_level_values(0)
-            
+        
+        # 移除可能重複的列並重設索引
         df = df.reset_index()
-        df.columns = [col.lower() for col in df.columns]
+        df.columns = [str(col).lower() for col in df.columns]
         
         # 統一欄位名稱
         rename_map = {
