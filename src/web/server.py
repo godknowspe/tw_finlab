@@ -249,7 +249,26 @@ def get_kbars(stock_id: str, interval: str = "1d", db: Session = Depends(get_db)
 
 @app.get("/api/portfolio")
 def get_portfolio(db: Session = Depends(get_db)):
-    portfolio_service = PortfolioService(app_state["cash"]["TWD"], app_state["cash"]["USD"])
+    config_service = ConfigService(db)
+    
+    # 判斷是否啟用 Shioaji 同步台股持倉
+    realtime_source = config_service.get_config("ds_realtime", "yfinance")
+    shioaji_api = None
+    if realtime_source == "Shioaji":
+        creds = {
+            "api_key": config_service.get_config("ds_shioaji_api_key", ""),
+            "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
+        }
+        try:
+            shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
+        except Exception as e:
+            logger.error(f"Failed to initialize Shioaji for position sync: {e}")
+
+    portfolio_service = PortfolioService(
+        app_state["cash"]["TWD"], 
+        app_state["cash"]["USD"],
+        shioaji_api=shioaji_api
+    )
     port_data = portfolio_service.calculate_positions(app_state["trades"])
     symbols = list(port_data["positions"].keys()) + [w["symbol"] for w in app_state["watchlist"]]
     latest_prices = {}

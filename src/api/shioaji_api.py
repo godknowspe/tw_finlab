@@ -22,6 +22,36 @@ class ShioajiClient:
                 )
         return self._api
 
+def fetch_shioaji_positions(api) -> list:
+    """
+    獲取 Shioaji 真實帳戶庫存明細
+    """
+    try:
+        # 取得所有證券庫存
+        positions = api.list_positions(api.stock_account)
+        results = []
+        for p in positions:
+            # 判斷是否為張數 (Shioaji API 回傳 quantity 為張數時，需乘 1000)
+            # 註：有些帳戶設定或標的可能是股，但標準整股庫存 p.quantity 是張
+            # 檢查 contract.unit，如果是 1000 代表 quantity 單位是張
+            contract = api.Contracts.Stocks[p.code]
+            unit = getattr(contract, 'unit', 1000)
+            total_shares = int(p.quantity * unit)
+            
+            results.append({
+                "symbol": p.code,
+                "shares": total_shares,
+                "avg_cost": float(p.price),
+                "market": "TW",
+                "currency": "TWD",
+                "real_pnl": float(p.pnl), # 直接取用券商計算的真實 PnL
+                "last_price": float(p.last_price)
+            })
+        return results
+    except Exception as e:
+        print(f"Error fetching Shioaji positions: {e}")
+        return []
+
 def fetch_shioaji_kbars(api, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     獲取 Shioaji K 線資料
