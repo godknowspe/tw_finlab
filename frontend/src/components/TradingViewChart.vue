@@ -19,8 +19,38 @@ let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
 let equitySeries = null;
+let pnlSeries = null;
+let backtestLineSeries = null;
 let indicatorSeries = {}; 
 let lastValidData = null;
+
+const legendPos = ref({ x: 12, y: 12 });
+const isLegendExpanded = ref(true);
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+const startDrag = (e) => {
+  isDragging = true;
+  dragOffset.x = e.clientX - legendPos.value.x;
+  dragOffset.y = e.clientY - legendPos.value.y;
+  document.addEventListener('mousemove', doDrag);
+  document.addEventListener('mouseup', stopDrag);
+};
+
+const doDrag = (e) => {
+  if (!isDragging) return;
+  // Keep within bounds roughly
+  const newX = Math.max(0, e.clientX - dragOffset.x);
+  const newY = Math.max(0, e.clientY - dragOffset.y);
+  legendPos.value = { x: newX, y: newY };
+};
+
+const stopDrag = () => {
+  isDragging = false;
+  document.removeEventListener('mousemove', doDrag);
+  document.removeEventListener('mouseup', stopDrag);
+};
+
 
 const initChart = () => {
   if (!chartContainer.value) return;
@@ -68,7 +98,6 @@ const initChart = () => {
       return;
     }
     
-    // Lightweight Charts v3.x uses seriesPrices
     if (!param.seriesPrices) return;
 
     const mainData = param.seriesPrices.get(candleSeries);
@@ -79,12 +108,8 @@ const initChart = () => {
       else if (param.time.year) timeStr = `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`;
 
       const newLegend = {
-        time: timeStr,
-        open: mainData.open?.toFixed(2),
-        high: mainData.high?.toFixed(2),
-        low: mainData.low?.toFixed(2),
-        close: mainData.close?.toFixed(2),
-        indicators: {}
+        time: timeStr, open: mainData.open?.toFixed(2), high: mainData.high?.toFixed(2),
+        low: mainData.low?.toFixed(2), close: mainData.close?.toFixed(2), indicators: {}
       };
 
       const vol = param.seriesPrices.get(volumeSeries);
@@ -92,20 +117,29 @@ const initChart = () => {
 
       for (const [id, series] of Object.entries(indicatorSeries)) {
         const val = param.seriesPrices.get(series);
-        if (val !== undefined && val !== null) {
-          newLegend.indicators[id] = val.toFixed(2);
-        }
+        if (val !== undefined && val !== null) newLegend.indicators[id] = val.toFixed(2);
       }
+      
+      if (pnlSeries) {
+        const pVal = param.seriesPrices.get(pnlSeries);
+        if (pVal !== undefined && pVal !== null) newLegend.indicators['PnL'] = pVal.toFixed(0);
+      }
+      
+      if (backtestLineSeries) {
+        const bVal = param.seriesPrices.get(backtestLineSeries);
+        if (bVal !== undefined && bVal !== null) newLegend.indicators['BT Equity'] = bVal.toFixed(0);
+      }
+
       legendData.value = newLegend;
     }
   });
 };
 
 const clearIndicators = () => {
-  for (const series of Object.values(indicatorSeries)) {
-    chart.removeSeries(series);
-  }
+  for (const series of Object.values(indicatorSeries)) { chart.removeSeries(series); }
   indicatorSeries = {};
+  if (pnlSeries) { chart.removeSeries(pnlSeries); pnlSeries = null; }
+  if (backtestLineSeries) { chart.removeSeries(backtestLineSeries); backtestLineSeries = null; }
   chart.applyOptions({ leftPriceScale: { visible: false } });
 };
 
@@ -113,9 +147,7 @@ const fetchData = async () => {
   if (!chart) return;
   if (props.mode === 'symbol' && props.symbol) {
     try {
-      const res = await axios.get(`/api/kbars/${props.symbol}`, {
-        params: { interval: marketStore.currentInterval }
-      });
+      const res = await axios.get(`/api/kbars/${props.symbol}`, { params: { interval: marketStore.currentInterval } });
       const data = res.data;
       if (!data || data.length === 0) return;
 
@@ -131,12 +163,12 @@ const fetchData = async () => {
       marketStore.selectedIndicators.forEach(id => {
         const key = id.toLowerCase();
         if (id === 'BB' && data[0].bb_up !== undefined) {
-          indicatorSeries['BB_Up'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
-          indicatorSeries['BB_Low'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
-          indicatorSeries['BB_Mid'] = chart.addLineSeries({ color: '#56ccf2', lineWidth: 1, priceLineVisible: false });
-          indicatorSeries['BB_Up'].setData(data.map(d => ({ time: d.time, value: d.bb_up })));
-          indicatorSeries['BB_Low'].setData(data.map(d => ({ time: d.time, value: d.bb_low })));
-          indicatorSeries['BB_Mid'].setData(data.map(d => ({ time: d.time, value: d.bb_mid })));
+          indicatorSeries['BB Up'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+          indicatorSeries['BB Low'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+          indicatorSeries['BB Mid'] = chart.addLineSeries({ color: '#56ccf2', lineWidth: 1, priceLineVisible: false });
+          indicatorSeries['BB Up'].setData(data.map(d => ({ time: d.time, value: d.bb_up })));
+          indicatorSeries['BB Low'].setData(data.map(d => ({ time: d.time, value: d.bb_low })));
+          indicatorSeries['BB Mid'].setData(data.map(d => ({ time: d.time, value: d.bb_mid })));
         } else if (id === 'MACD' && data[0].macd !== undefined) {
           chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.75, bottom: 0.05 } } });
           indicatorSeries['MACD'] = chart.addLineSeries({ color: colors.MACD, lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
@@ -153,12 +185,28 @@ const fetchData = async () => {
         }
       });
 
+      // Show Backtest XOR PnL to prevent Y-axis scale clashing
       if (marketStore.backtestEnabled && marketStore.backtestResults) {
+        // BACKTEST MODE
         candleSeries.setMarkers(marketStore.backtestResults.trades.map(t => ({
           time: t.time, position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
           color: t.side === 'buy' ? '#3fb950' : '#f85149', shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown', text: t.side.toUpperCase()
         })));
-      } else { candleSeries.setMarkers([]); }
+        if (marketStore.backtestResults.chart_data?.length > 0) {
+          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
+          backtestLineSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 2, priceScaleId: 'left', title: 'BT Equity', priceLineVisible: false });
+          backtestLineSeries.setData(marketStore.backtestResults.chart_data);
+        }
+      } else {
+        // REAL PORTFOLIO PnL MODE
+        candleSeries.setMarkers([]); 
+        const pnlData = data.filter(d => d.total_pnl !== undefined && d.total_pnl !== null).map(d => ({ time: d.time, value: d.total_pnl }));
+        if (pnlData.length > 0) {
+            chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
+            pnlSeries = chart.addLineSeries({ color: '#ff7eb9', lineWidth: 2, priceScaleId: 'left', title: 'PnL', priceLineVisible: false });
+            pnlSeries.setData(pnlData);
+        }
+      }
 
       if (equitySeries) { chart.removeSeries(equitySeries); equitySeries = null; }
       const barsToDisplay = 120;
@@ -166,17 +214,15 @@ const fetchData = async () => {
         chart.timeScale().setVisibleRange({ from: data[data.length - barsToDisplay].time, to: data[data.length - 1].time });
       } else { chart.timeScale().fitContent(); }
 
-      // Default legend
       const last = data[data.length - 1];
       const initialIndicators = {};
       Object.keys(indicatorSeries).forEach(id => {
-         let val = last[id.toLowerCase()];
-         if (id === 'BB_Up') val = last.bb_up;
-         if (id === 'BB_Low') val = last.bb_low;
-         if (id === 'BB_Mid') val = last.bb_mid;
+         let val = last[id.toLowerCase().replace(' ', '_')];
+         if (id === 'BB Up') val = last.bb_up; if (id === 'BB Low') val = last.bb_low; if (id === 'BB Mid') val = last.bb_mid;
          if (id === 'Signal') val = last.signal;
          if (val !== undefined && val !== null) initialIndicators[id] = val.toFixed(2);
       });
+      if (last.total_pnl !== undefined && last.total_pnl !== null) initialIndicators['PnL'] = last.total_pnl.toFixed(0);
       lastValidData = {
         time: last.time, open: last.open.toFixed(2), high: last.high.toFixed(2), low: last.low.toFixed(2), close: last.close.toFixed(2),
         v: (last.value/1000).toFixed(0) + 'K', indicators: initialIndicators
@@ -195,19 +241,24 @@ const fetchData = async () => {
 };
 
 onMounted(() => { initChart(); fetchData(); });
-watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled], () => fetchData(), { deep: true });
+watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, marketStore.backtestResults], () => fetchData(), { deep: true });
 onUnmounted(() => { if (chart) chart.remove(); });
 </script>
 
 <template>
   <div class="relative w-full h-full select-none overflow-hidden">
     <div ref="chartContainer" class="absolute inset-0"></div>
-    <div class="absolute top-3 left-3 bg-black/80 backdrop-blur-md border border-white/10 p-3 rounded-lg text-[11px] z-10 pointer-events-none shadow-2xl flex flex-col gap-2 min-w-[220px]">
-      <div class="flex justify-between border-b border-white/10 pb-1.5">
-        <span class="text-white font-bold uppercase tracking-wider">{{ symbol }}</span>
-        <span class="text-gray-500 font-mono">{{ legendData.time }}</span>
+    <div :style="{ top: legendPos.y + 'px', left: legendPos.x + 'px' }" class="absolute bg-black/80 backdrop-blur-md border border-white/10 p-3 rounded-lg text-[11px] z-20 shadow-2xl flex flex-col gap-2 min-w-[220px] transition-opacity hover:opacity-100 opacity-90">
+      <div @mousedown.prevent="startDrag" class="flex justify-between items-center border-b border-white/10 pb-1.5 cursor-move" title="Drag to move">
+        <div class="flex items-center gap-2">
+          <span class="text-white font-bold uppercase tracking-wider">{{ symbol }}</span>
+          <span class="text-gray-500 font-mono">{{ legendData.time }}</span>
+        </div>
+        <button @mousedown.stop @click="isLegendExpanded = !isLegendExpanded" class="text-gray-500 hover:text-white px-1.5 py-0.5 rounded bg-white/5 cursor-pointer z-30">
+          {{ isLegendExpanded ? '−' : '+' }}
+        </button>
       </div>
-      <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+      <div v-show="isLegendExpanded" class="grid grid-cols-2 gap-x-4 gap-y-1.5">
         <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">OPEN</span><span class="text-white font-mono">{{ legendData.open }}</span></div>
         <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">HIGH</span><span class="text-white font-mono">{{ legendData.high }}</span></div>
         <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">LOW</span><span class="text-white font-mono">{{ legendData.low }}</span></div>
@@ -218,8 +269,8 @@ onUnmounted(() => { if (chart) chart.remove(); });
       </div>
       <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
         <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">
-          <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id.replace('_', ' ') }}</span>
-          <span class="text-blue-400 font-mono font-bold">{{ val }}</span>
+          <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id }}</span>
+          <span :class="id.includes('PnL') ? (parseFloat(val) >= 0 ? 'text-text-green' : 'text-text-red') : 'text-blue-400'" class="font-mono font-bold">{{ val }}</span>
         </div>
       </div>
     </div>
