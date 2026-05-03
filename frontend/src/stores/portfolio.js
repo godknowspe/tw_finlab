@@ -7,7 +7,10 @@ export const usePortfolioStore = defineStore('portfolio', {
     trades: [],
     summary: {},
     agentState: {},
-    settings: { take_profit_pct: 10, stop_loss_pct: 5 }
+    settings: {
+      take_profit_pct: 10,
+      stop_loss_pct: 5
+    }
   }),
   actions: {
     async fetchPortfolio() {
@@ -20,6 +23,27 @@ export const usePortfolioStore = defineStore('portfolio', {
         this.settings = res.data.settings;
       } catch (error) {
         console.error('Failed to fetch portfolio:', error);
+      }
+    },
+    async updateSettings(newSettings) {
+      this.settings = { ...this.settings, ...newSettings };
+    },
+    async deleteTrade(tradeId) {
+      try {
+        await axios.delete(`/api/trades/${tradeId}`);
+        await this.fetchPortfolio();
+      } catch (error) {
+        console.error('Failed to delete trade:', error);
+      }
+    },
+    async syncTrades() {
+      try {
+        const res = await axios.post('/api/sync/trades');
+        await this.fetchPortfolio();
+        return res.data;
+      } catch (error) {
+        console.error('Failed to sync trades:', error);
+        throw error;
       }
     }
   }

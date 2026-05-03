@@ -52,6 +52,35 @@ def fetch_shioaji_positions(api) -> list:
         print(f"Error fetching Shioaji positions: {e}")
         return []
 
+def fetch_shioaji_trades(api) -> list:
+    """
+    獲取 Shioaji 當日成交紀錄 (可以用於同步)
+    """
+    try:
+        # list_trades() 回傳的是當日的委託單與成交狀態
+        trades = api.list_trades()
+        results = []
+        for t in trades:
+            # 只處理有成交的部分 (Status.Filled)
+            if t.status.status == 'Filled':
+                # 計算該筆委託的總成交金額與股數
+                # t.trades 包含了該委託下所有的細分成單
+                for detail in t.trades:
+                    results.append({
+                        "id": f"sj_{detail.trade_id}", # 使用 Shioaji 的交易 ID 避免重複
+                        "symbol": t.contract.code,
+                        "action": "BUY" if t.order.action == 'Buy' else "SELL",
+                        "shares": int(detail.quantity),
+                        "price": float(detail.price),
+                        "timestamp": detail.ts, # 格式為 '2026-05-03 10:23:45.123'
+                        "currency": "TWD",
+                        "source": "Shioaji"
+                    })
+        return results
+    except Exception as e:
+        print(f"Error fetching Shioaji trades: {e}")
+        return []
+
 def fetch_shioaji_kbars(api, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     獲取 Shioaji K 線資料
