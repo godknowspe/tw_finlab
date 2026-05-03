@@ -1283,9 +1283,11 @@
                                 const formatChartTime = (t) => {
                                     if (!t) return null;
                                     if (typeof t === 'string') return t.trim();
-                                    if (typeof t === 'number') return String(t);
+                                    if (typeof t === 'number') {
+                                        // 分鐘線的時間戳，轉成 string 以便比對
+                                        return String(t);
+                                    }
                                     if (typeof t === 'object' && t.year && t.month && t.day) {
-                                        // Lightweight Charts BusinessDay format: {year, month, day}
                                         return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
                                     }
                                     return String(t);
@@ -1294,10 +1296,6 @@
                                 validData.forEach(d => {
                                     validTimes.add(formatChartTime(d.time));
                                 });
-
-                                console.log('--- MARKER DEBUG ---');
-                                console.log('Sample Raw Time:', validData[0]?.time);
-                                console.log('Formatted Time:', formatChartTime(validData[0]?.time));
 
                                 // 1. 真實持倉的買賣標記
                                 if (portfolio.value && portfolio.value.trades) {
@@ -1310,7 +1308,7 @@
                                             if (validData.length > 0) {
                                                 const firstBar = validData[0].time;
                                                 if (typeof firstBar === 'number') {
-                                                    // 分K模式 (Unix Timestamp)
+                                                    // 分K模式 (Unix Timestamp)，尋找當天最後一根K線或匹配的K線
                                                     const kBar = validData.find(d => {
                                                         const dDate = new Date(d.time * 1000);
                                                         const dStr = dDate.getFullYear() + '-' + String(dDate.getMonth() + 1).padStart(2, '0') + '-' + String(dDate.getDate()).padStart(2, '0');
@@ -1318,7 +1316,6 @@
                                                     });
                                                     targetTime = kBar ? kBar.time : null;
                                                 } else {
-                                                    // 日K模式
                                                     targetTime = dateStr;
                                                 }
                                             }
@@ -1346,10 +1343,8 @@
                                                 if (validData.length > 0) {
                                                     const firstBar = validData[0].time;
                                                     if (typeof firstBar === 'number') {
-                                                        // 分K
                                                         targetTime = Math.floor(new Date(t.time).getTime() / 1000);
                                                     } else {
-                                                        // 日K
                                                         targetTime = btDateStr;
                                                     }
                                                 }
@@ -1368,9 +1363,6 @@
                                     });
                                 }
                                 
-                                console.log('Final Markers Count:', markers.length);
-                                if (markers.length > 0) console.log('Sample Marker:', JSON.stringify(markers[0]));
-                                console.log('--- MARKER DEBUG END ---');
                                 // 修正日K模式下的時間格式，如果是物件則還原
                                 const finalMarkers = markers.map(m => {
                                     const firstBarTime = validData[0].time;

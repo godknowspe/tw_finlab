@@ -313,6 +313,100 @@ def del_trade(trade_id: int):
     save_app_state(app_state)
     return {"status": "success"}
 
+
+from src.engine.backtest import BacktestEngine
+from src.engine.strategies import STRATEGIES
+from src.web.analysis import calculate_trade_analysis
+import random
+
+@app.get("/api/backtest/{symbol}")
+def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d", db: Session = Depends(get_db)):
+    data_service = DataService(db)
+    
+    # 取得歷史資料
+    df = data_service.get_stock_data_df(symbol, interval=interval)
+    
+    if df.empty:
+        return {"error": "No data available for backtest"}
+        
+    df['stock_id'] = symbol
+    selected_strategies = strategies.split(",")
+    results_map = {}
+
+    for s_name in selected_strategies:
+        if s_name in STRATEGIES:
+            engine = BacktestEngine(df)
+            res = engine.run(STRATEGIES[s_name])
+            
+            is_minute_interval = interval in ['15m', '30m', '60m', '1h']
+            
+            equity_curve = res['equity_curve'].copy()
+            chart_data = []
+            for _, row in equity_curve.iterrows():
+                ts = row['date']
+                if is_minute_interval:
+                    chart_time = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(pd.to_datetime(ts).timestamp())
+                else:
+                    chart_time = ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
+                
+                chart_data.append({
+                    "time": chart_time,
+                    "value": round(row['total_equity'], 2)
+                })
+            
+            trade_markers = []
+            for t in res.get('trades', []):
+                ts = t['date']
+                if is_minute_interval:
+                    chart_time = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(pd.to_datetime(ts).timestamp())
+                else:
+                    chart_time = ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
+                    
+                trade_markers.append({
+                    "time": chart_time,
+                    "side": t['side'],
+                    "price": t['price'],
+                    "size": t['size']
+                })
+
+            results_map[s_name] = {
+                "total_return_pct": round(res['total_return'] * 100, 2),
+                "max_drawdown_pct": round(res['max_drawdown'] * 100, 2),
+                "final_equity": int(res['final_equity']),
+                "chart_data": chart_data,
+                "trades": trade_markers
+            }
+        
+    return results_map
+
+@app.get("/api/equity")
+def get_equity():
+    random.seed(42)
+    today = datetime.date.today()
+    result = []
+    base_value = 1000000.0
+    
+    for i in range(3650, -1, -1):
+        dt = today - datetime.timedelta(days=i)
+        if dt.weekday() >= 5:
+            continue
+            
+        if not result:
+            val = base_value
+        else:
+            val = result[-1]["value"] * random.uniform(0.992, 1.009)
+        
+        result.append({
+            "time": dt.strftime('%Y-%m-%d'),
+            "value": round(val, 2)
+        })
+    return result
+
+@app.get("/api/analysis")
+def get_trade_analysis():
+    results = calculate_trade_analysis(app_state["trades"])
+    return results
+
 @app.websocket("/api/ws/watchlist")
 async def websocket_watchlist(websocket: WebSocket):
     await websocket.accept()
