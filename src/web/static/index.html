@@ -978,15 +978,12 @@
 
                 
                 const switchMode = async (mode) => {
+                    if (chartMode.value === mode) return;
                     chartMode.value = mode;
                     if (mode === 'symbol') {
                         areaSeries.setData([]); // 清除假資料
                         areaSeries.applyOptions({ visible: false });
-                        // 清除所有回測線
-                        Object.values(backtestSeriesList).forEach(s => s.setData([]));
-                        selectedStrategies.value = [];
-                        backtestResults.value = {};
-                        backtestEnabled.value = false;
+                        
                         candleSeries.applyOptions({ visible: true });
                         symbolEquitySeries.applyOptions({ visible: true });
                         if(showVOL.value) volumeSeries.applyOptions({ visible: true });
@@ -1030,6 +1027,16 @@
                         areaSeries.applyOptions({ visible: true });
                         
                         symbolEquitySeries.applyOptions({ visible: false });
+                        
+                        // 切換到非 Symbol 模式時，立即清除並隱藏回測線與狀態
+                        Object.values(backtestSeriesList).forEach(s => {
+                            s.setData([]);
+                            s.applyOptions({ visible: false });
+                        });
+                        selectedStrategies.value = [];
+                        backtestResults.value = {};
+                        backtestEnabled.value = false;
+
                         if(ws) { ws.close(); wsConnected.value = false; }
                         
                         try {
