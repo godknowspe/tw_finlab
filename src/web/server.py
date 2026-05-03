@@ -35,6 +35,10 @@ app = FastAPI(title="TW FinLab Quant Dashboard")
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_state.json")
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../frontend/dist"))
+
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # --- Dependency ---
@@ -112,6 +116,8 @@ class ActionRequest(BaseModel):
 
 @app.get("/")
 async def root(request: Request):
+    if os.path.exists(os.path.join(frontend_dist, "index.html")):
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
     user_agent = request.headers.get("user-agent", "").lower()
     is_mobile = any(mobile_os in user_agent for mobile_os in ["android", "iphone", "ipad", "mobile"])
     if is_mobile and os.path.exists(os.path.join(static_dir, "mobile.html")):
