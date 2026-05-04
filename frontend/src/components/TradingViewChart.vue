@@ -2,6 +2,7 @@
 import { onMounted, ref, watch, onUnmounted } from 'vue';
 import { createChart, CrosshairMode } from 'lightweight-charts';
 import { useMarketStore } from '@/stores/market';
+import { usePortfolioStore } from '@/stores/portfolio';
 import axios from 'axios';
 
 const props = defineProps({
@@ -10,20 +11,8 @@ const props = defineProps({
 });
 
 const marketStore = useMarketStore();
+const portfolioStore = usePortfolioStore();
 const chartContainer = ref(null);
-const legendData = ref({
-  time: '--', open: '--', high: '--', low: '--', close: '--', v: '--', indicators: {}
-});
-
-let chart = null;
-let candleSeries = null;
-let volumeSeries = null;
-let equitySeries = null;
-let pnlSeries = null;
-let backtestLineSeries = null;
-let indicatorSeries = {}; 
-let lastValidData = null;
-
 const legendPos = ref({ x: 12, y: 12 });
 const isLegendExpanded = ref(true);
 let isDragging = false;
@@ -39,7 +28,6 @@ const startDrag = (e) => {
 
 const doDrag = (e) => {
   if (!isDragging) return;
-  // Keep within bounds roughly
   const newX = Math.max(0, e.clientX - dragOffset.x);
   const newY = Math.max(0, e.clientY - dragOffset.y);
   legendPos.value = { x: newX, y: newY };
@@ -51,6 +39,18 @@ const stopDrag = () => {
   document.removeEventListener('mouseup', stopDrag);
 };
 
+const legendData = ref({
+  time: '--', open: '--', high: '--', low: '--', close: '--', v: '--', indicators: {}
+});
+
+let chart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let equitySeries = null;
+let pnlSeries = null;
+let backtestLineSeries = null;
+let indicatorSeries = {}; 
+let lastValidData = null;
 
 const initChart = () => {
   if (!chartContainer.value) return;
@@ -185,21 +185,41 @@ const fetchData = async () => {
         }
       });
 
-      // Show Backtest XOR PnL to prevent Y-axis scale clashing
+      let markers = [];
       if (marketStore.backtestEnabled && marketStore.backtestResults) {
         // BACKTEST MODE
-        candleSeries.setMarkers(marketStore.backtestResults.trades.map(t => ({
+        markers = marketStore.backtestResults.trades.map(t => ({
           time: t.time, position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
-          color: t.side === 'buy' ? '#3fb950' : '#f85149', shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown', text: t.side.toUpperCase()
-        })));
+          color: t.side === 'buy' ? '#3fb950' : '#f85149', shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown', text: 'BT ' + t.side.toUpperCase()
+        }));
+        
         if (marketStore.backtestResults.chart_data?.length > 0) {
           chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
           backtestLineSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 2, priceScaleId: 'left', title: 'BT Equity', priceLineVisible: false });
           backtestLineSeries.setData(marketStore.backtestResults.chart_data);
         }
       } else {
-        // REAL PORTFOLIO PnL MODE
-        candleSeries.setMarkers([]); 
+        // REAL PORTFOLIO MODE
+        const actualTrades = portfolioStore.trades.filter(t => t.symbol === props.symbol);
+        
+        // Group trades by date to prevent duplicate markers on the same time
+        const tradesByDate = {};
+        actualTrades.forEach(t => {
+           const tDate = t.timestamp.split('T')[0];
+           if (!tradesByDate[tDate]) tradesByDate[tDate] = { sharesBuy: 0, sharesSell: 0 };
+           if (t.action === 'BUY') tradesByDate[tDate].sharesBuy += t.shares;
+           else tradesByDate[tDate].sharesSell += t.shares;
+        });
+        
+        for (const [tDate, aggr] of Object.entries(tradesByDate)) {
+           if (aggr.sharesBuy > 0) {
+             markers.push({ time: tDate, position: 'belowBar', color: '#3fb950', shape: 'arrowUp', text: `B ${aggr.sharesBuy}` });
+           }
+           if (aggr.sharesSell > 0) {
+             markers.push({ time: tDate, position: 'aboveBar', color: '#f85149', shape: 'arrowDown', text: `S ${aggr.sharesSell}` });
+           }
+        }
+
         const pnlData = data.filter(d => d.total_pnl !== undefined && d.total_pnl !== null).map(d => ({ time: d.time, value: d.total_pnl }));
         if (pnlData.length > 0) {
             chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
@@ -207,6 +227,9 @@ const fetchData = async () => {
             pnlSeries.setData(pnlData);
         }
       }
+
+      markers.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      candleSeries.setMarkers(markers);
 
       if (equitySeries) { chart.removeSeries(equitySeries); equitySeries = null; }
       const barsToDisplay = 120;
@@ -241,7 +264,7 @@ const fetchData = async () => {
 };
 
 onMounted(() => { initChart(); fetchData(); });
-watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, marketStore.backtestResults], () => fetchData(), { deep: true });
+watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, portfolioStore.trades], () => fetchData(), { deep: true });
 onUnmounted(() => { if (chart) chart.remove(); });
 </script>
 
@@ -258,19 +281,21 @@ onUnmounted(() => { if (chart) chart.remove(); });
           {{ isLegendExpanded ? '−' : '+' }}
         </button>
       </div>
-      <div v-show="isLegendExpanded" class="grid grid-cols-2 gap-x-4 gap-y-1.5">
-        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">OPEN</span><span class="text-white font-mono">{{ legendData.open }}</span></div>
-        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">HIGH</span><span class="text-white font-mono">{{ legendData.high }}</span></div>
-        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">LOW</span><span class="text-white font-mono">{{ legendData.low }}</span></div>
-        <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">CLOSE</span><span :class="legendData.close >= legendData.open ? 'text-text-green' : 'text-text-red'" class="font-mono font-bold text-sm">{{ legendData.close }}</span></div>
-        <div class="flex justify-between col-span-2 border-t border-white/10 pt-1.5 mt-0.5">
-           <span class="text-gray-500 text-[10px]">VOLUME</span><span class="text-gray-300 font-mono">{{ legendData.v }}</span>
+      <div v-show="isLegendExpanded" class="flex flex-col gap-2">
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">OPEN</span><span class="text-white font-mono">{{ legendData.open }}</span></div>
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">HIGH</span><span class="text-white font-mono">{{ legendData.high }}</span></div>
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">LOW</span><span class="text-white font-mono">{{ legendData.low }}</span></div>
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">CLOSE</span><span :class="legendData.close >= legendData.open ? 'text-text-green' : 'text-text-red'" class="font-mono font-bold text-sm">{{ legendData.close }}</span></div>
+          <div class="flex justify-between col-span-2 border-t border-white/10 pt-1.5 mt-0.5">
+             <span class="text-gray-500 text-[10px]">VOLUME</span><span class="text-gray-300 font-mono">{{ legendData.v }}</span>
+          </div>
         </div>
-      </div>
-      <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
-        <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">
-          <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id }}</span>
-          <span :class="id.includes('PnL') ? (parseFloat(val) >= 0 ? 'text-text-green' : 'text-text-red') : 'text-blue-400'" class="font-mono font-bold">{{ val }}</span>
+        <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
+          <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">
+            <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id.replace('_', ' ') }}</span>
+            <span :class="id.includes('PnL') ? (parseFloat(val) >= 0 ? 'text-text-green' : 'text-text-red') : 'text-blue-400'" class="font-mono font-bold">{{ val }}</span>
+          </div>
         </div>
       </div>
     </div>
