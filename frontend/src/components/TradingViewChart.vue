@@ -147,7 +147,7 @@ const fetchData = async () => {
   if (!chart) return;
   if (props.mode === 'symbol' && props.symbol) {
     try {
-      const res = await axios.get(`/api/kbars/${props.symbol}`, { params: { interval: marketStore.currentInterval } });
+      const res = await axios.get(`/api/kbars/${props.symbol}`, { params: { interval: marketStore.currentInterval, t: Date.now() } });
       const data = res.data;
       if (!data || data.length === 0) return;
 
