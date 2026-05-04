@@ -186,7 +186,7 @@ def get_kbars(stock_id: str, interval: str = "1d", db: Session = Depends(get_db)
             else:
                 start_date = (datetime.date.today() - datetime.timedelta(days=60)).strftime('%Y-%m-%d')
                 
-            end_date = datetime.date.today().strftime('%Y-%m-%d')
+            end_date = (datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
             new_df = provider.fetch_kbars(stock_id, start_date, end_date, interval)
             
             if not new_df.empty:
@@ -475,36 +475,89 @@ def get_trade_analysis():
     return results
 
 @app.websocket("/api/ws/watchlist")
-async def websocket_watchlist(websocket: WebSocket):
+async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db)):
     await websocket.accept()
     last_prices = {}
+    config_service = ConfigService(db)
+    
+    # 決定數據源
+    realtime_source = config_service.get_config("ds_realtime", "yfinance")
+    shioaji_api = None
+    
+    if realtime_source == "Shioaji":
+        creds = {
+            "api_key": config_service.get_config("ds_shioaji_api_key", ""),
+            "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
+        }
+        try:
+            shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
+        except Exception as e:
+            logger.error(f"WS Shioaji API Error: {e}")
+
     try:
         while True:
             symbols = [w["symbol"] for w in app_state["watchlist"]]
+            updates = []
+            
             if symbols:
-                yf_syms = []
-                for s in symbols:
-                    if s.startswith("^") or "." in s: yf_syms.append(s)
-                    elif s.isdigit(): yf_syms.append(f"{s}.TW")
-                    else: yf_syms.append(s)
-                data = await asyncio.to_thread(yf.download, yf_syms, period="5d", progress=False)
-                updates = []
-                if not data.empty:
-                    for s in symbols:
-                        if s.startswith("^") or "." in s: yf_s = s
-                        elif s.isdigit(): yf_s = f"{s}.TW"
-                        else: yf_s = s
+                if shioaji_api:
+                    # 使用 Shioaji Snapshots 抓取台股即時報價
+                    tw_syms = [s for s in symbols if s.isdigit()]
+                    if tw_syms:
                         try:
-                            v = data['Close'][yf_s].dropna() if len(yf_syms) > 1 else data['Close'].dropna()
-                            if not v.empty:
-                                price = float(v.iloc[-1])
-                                if price != last_prices.get(s):
-                                    last_prices[s] = price
-                                    updates.append({"symbol": s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
-                        except: pass
-                if updates: await websocket.send_json({"type": "updates", "data": updates})
-            await asyncio.sleep(30)
-    except Exception: pass
+                            from src.api.shioaji_api import fetch_shioaji_quote
+                            contracts = []
+                            valid_syms = []
+                            for s in tw_syms:
+                                contract = shioaji_api.Contracts.Stocks.get(s)
+                                if contract:
+                                    contracts.append(contract)
+                                    valid_syms.append(s)
+                            
+                            if contracts:
+                                snapshots = await asyncio.to_thread(shioaji_api.snapshots, contracts)
+                                for idx, snap in enumerate(snapshots):
+                                    if snap and snap.close > 0:
+                                        s = valid_syms[idx]
+                                        price = float(snap.close)
+                                        if price != last_prices.get(s):
+                                            last_prices[s] = price
+                                            updates.append({"symbol": s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
+                        except Exception as e:
+                            logger.error(f"Shioaji WS fetch error: {e}")
+                
+                # 美股或其他還是使用 yfinance
+                us_syms = [s for s in symbols if not s.isdigit()]
+                # 如果沒有 shioaji，台股也用 yf 抓
+                if not shioaji_api:
+                    us_syms.extend([f"{s}.TW" for s in symbols if s.isdigit()])
+                
+                if us_syms:
+                    try:
+                        data = await asyncio.to_thread(yf.download, us_syms, period="5d", progress=False)
+                        if not data.empty:
+                            for s in symbols:
+                                is_tw = s.isdigit()
+                                if is_tw and shioaji_api: continue # 已經用 shioaji 抓了
+                                
+                                yf_s = f"{s}.TW" if is_tw else s
+                                try:
+                                    v = data['Close'][yf_s].dropna() if len(us_syms) > 1 else data['Close'].dropna()
+                                    if not v.empty:
+                                        price = float(v.iloc[-1])
+                                        actual_s = s
+                                        if price != last_prices.get(actual_s):
+                                            last_prices[actual_s] = price
+                                            updates.append({"symbol": actual_s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
+                                except: pass
+                    except Exception as e:
+                        logger.error(f"YF WS fetch error: {e}")
 
-if __name__ == "__main__":
-    uvicorn.run("src.web.server:app", host="0.0.0.0", port=8000, reload=True)
+            if updates:
+                await websocket.send_json({"type": "updates", "data": updates})
+            await asyncio.sleep(5) # 每 5 秒更新一次
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket Error: {e}")
+
