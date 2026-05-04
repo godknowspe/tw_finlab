@@ -3,7 +3,7 @@ import { ref, onMounted, nextTick, watch } from 'vue';
 import { useMarketStore } from '@/stores/market';
 import { usePortfolioStore } from '@/stores/portfolio';
 import Sortable from 'sortablejs';
-import { Plus, X, TrendingUp, Briefcase, History, RefreshCw } from 'lucide-vue-next';
+import { Plus, X, TrendingUp, Briefcase, History, RefreshCw, Trash2 } from 'lucide-vue-next';
 
 const marketStore = useMarketStore();
 const portfolioStore = usePortfolioStore();
@@ -26,6 +26,13 @@ const syncTrades = async () => {
 
 const sortableTW = ref(null);
 const sortableUS = ref(null);
+
+
+const deleteTrade = async (id) => {
+  if (confirm("確定要刪除這筆交易紀錄嗎？")) {
+    await portfolioStore.deleteTrade(id);
+  }
+};
 
 const initSortable = () => {
   const options = { animation: 150, delay: 200, delayOnTouchOnly: true };
@@ -61,7 +68,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <div ref="sortableTW">
           <div v-for="item in marketStore.watchlistTW" :key="item.symbol" 
                @click="marketStore.setCurrentSymbol(item.symbol)"
-               :class="marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent'"
+                              :class="[marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent', item.flashClass]"
                class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer transition-colors">
             <div class="flex-1 min-w-0">
                <div class="font-bold text-white text-sm">{{ item.symbol }}</div>
@@ -78,7 +85,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <div ref="sortableUS">
           <div v-for="item in marketStore.watchlistUS" :key="item.symbol" 
                @click="marketStore.setCurrentSymbol(item.symbol)"
-               :class="marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent'"
+                              :class="[marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent', item.flashClass]"
                class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer transition-colors">
             <div class="flex-1 min-w-0">
                <div class="font-bold text-white text-sm">{{ item.symbol }}</div>
@@ -141,12 +148,27 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
             </div>
             <div class="text-[9px] text-gray-600 font-mono">{{ trade.timestamp.substring(5, 16).replace('T', ' ') }}</div>
           </div>
-          <div class="text-right">
-            <div class="text-xs text-white font-mono">{{ trade.shares }}股</div>
-            <div class="text-[10px] text-gray-500 font-mono">@{{ trade.price.toFixed(2) }}</div>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <div class="text-xs text-white font-mono">{{ trade.shares }}股</div>
+              <div class="text-[10px] text-gray-500 font-mono">@{{ trade.price.toFixed(2) }}</div>
+            </div>
+            <button @click.stop="deleteTrade(trade.id)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Delete Trade">
+              <Trash2 :size="14" />
+            </button>
           </div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.flash-green {
+  animation: flashGreen 0.5s ease-out;
+}
+@keyframes flashGreen {
+  0% { background-color: rgba(63, 185, 80, 0.5); }
+  100% { background-color: transparent; }
+}
+</style>
