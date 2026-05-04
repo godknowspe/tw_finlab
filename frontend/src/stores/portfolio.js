@@ -28,7 +28,18 @@ export const usePortfolioStore = defineStore('portfolio', {
     async updateSettings(newSettings) {
       this.settings = { ...this.settings, ...newSettings };
     },
+    
+    async addTrade(trade) {
+      try {
+        await axios.post('/api/trades', trade);
+        await this.fetchPortfolio();
+      } catch (error) {
+        console.error('Failed to add trade:', error);
+        throw error;
+      }
+    },
     async deleteTrade(tradeId) {
+
       try {
         await axios.delete(`/api/trades/${tradeId}`);
         await this.fetchPortfolio();

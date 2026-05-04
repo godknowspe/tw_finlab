@@ -24,6 +24,32 @@ const syncTrades = async () => {
   }
 };
 
+
+const showAddModal = ref(false);
+const newTrade = ref({
+  symbol: '',
+  action: 'BUY',
+  shares: 1000,
+  price: 0,
+  currency: 'TWD',
+  timestamp: new Date().toISOString().slice(0, 16)
+});
+
+const submitTrade = async () => {
+  if (!newTrade.value.symbol || newTrade.value.shares <= 0 || newTrade.value.price <= 0) {
+    return alert("請填寫完整的交易資訊");
+  }
+  try {
+    await portfolioStore.addTrade(newTrade.value);
+    showAddModal.value = false;
+    newTrade.value = {
+      symbol: '', action: 'BUY', shares: 1000, price: 0, currency: 'TWD', timestamp: new Date().toISOString().slice(0, 16)
+    };
+  } catch (e) {
+    alert("新增失敗");
+  }
+};
+
 const sortableTW = ref(null);
 const sortableUS = ref(null);
 
@@ -136,7 +162,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <span>ACTION / SYM</span>
         <div class="flex items-center gap-2">
           <RefreshCw :size="12" class="text-blue-400 cursor-pointer" :class="isSyncing ? 'animate-spin' : ''" @click="syncTrades" />
-          <Plus :size="12" class="text-gray-500 hover:text-white cursor-pointer" />
+          <Plus @click="showAddModal = true" :size="12" class="text-gray-500 hover:text-white cursor-pointer" />
         </div>
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
@@ -161,6 +187,62 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
       </div>
     </div>
   </div>
+
+    <!-- Add Trade Modal -->
+    <div v-if="showAddModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+      <div class="bg-gray-900 border border-gray-700 p-5 rounded-lg w-80 shadow-2xl flex flex-col gap-4">
+        <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+          <h3 class="text-white font-bold text-sm">新增手動交易紀錄</h3>
+          <X @click="showAddModal = false" class="text-gray-500 hover:text-white cursor-pointer" :size="16" />
+        </div>
+        
+        <div class="flex flex-col gap-3 text-xs text-gray-300">
+          <div class="flex flex-col gap-1">
+            <label>股票代號 (Symbol)</label>
+            <input v-model="newTrade.symbol" type="text" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500 uppercase" placeholder="e.g. 2330.TW or AAPL">
+          </div>
+          
+          <div class="flex gap-2">
+            <div class="flex flex-col gap-1 flex-1">
+              <label>買/賣 (Action)</label>
+              <select v-model="newTrade.action" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+                <option value="BUY">BUY</option>
+                <option value="SELL">SELL</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1 flex-1">
+              <label>幣別 (Currency)</label>
+              <select v-model="newTrade.currency" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+                <option value="TWD">TWD</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <div class="flex flex-col gap-1 flex-1">
+              <label>股數 (Shares)</label>
+              <input v-model.number="newTrade.shares" type="number" min="1" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+            </div>
+            <div class="flex flex-col gap-1 flex-1">
+              <label>成交價 (Price)</label>
+              <input v-model.number="newTrade.price" type="number" step="0.01" min="0.01" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label>時間 (Time)</label>
+            <input v-model="newTrade.timestamp" type="datetime-local" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+          </div>
+        </div>
+
+        <div class="mt-2 flex justify-end gap-2">
+          <button @click="showAddModal = false" class="px-4 py-1.5 rounded text-gray-400 hover:text-white transition-colors">取消</button>
+          <button @click="submitTrade" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-1.5 rounded transition-colors">新增紀錄</button>
+        </div>
+      </div>
+    </div>
+
 </template>
 
 <style scoped>
