@@ -185,13 +185,33 @@ const fetchData = async () => {
         }
       });
 
+      
       let markers = [];
       if (marketStore.backtestEnabled && marketStore.backtestResults) {
         // BACKTEST MODE
-        markers = marketStore.backtestResults.trades.map(t => ({
-          time: t.time, position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
-          color: t.side === 'buy' ? '#3fb950' : '#f85149', shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown', text: 'BT ' + t.side.toUpperCase()
-        }));
+        const btTrades = marketStore.backtestResults.trades;
+        let validBtMarkers = [];
+        btTrades.forEach(t => {
+           const tradeTimeMs = typeof t.time === 'number' ? t.time * 1000 : new Date(t.time).getTime();
+           let closestCandle = null;
+           let minDiff = Infinity;
+           for (const d of data) {
+             const candleTimeMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
+             const diff = Math.abs(candleTimeMs - tradeTimeMs);
+             if (diff < minDiff) { minDiff = diff; closestCandle = d; }
+           }
+           if (closestCandle) {
+             validBtMarkers.push({
+               time: closestCandle.time,
+               position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
+               color: t.side === 'buy' ? '#3fb950' : '#f85149',
+               shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
+               text: 'BT ' + t.side.toUpperCase()
+             });
+           }
+        });
+        markers = validBtMarkers;
+
         
         if (marketStore.backtestResults.chart_data?.length > 0) {
           chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
@@ -199,26 +219,58 @@ const fetchData = async () => {
           backtestLineSeries.setData(marketStore.backtestResults.chart_data);
         }
       } else {
+        
         // REAL PORTFOLIO MODE
         const actualTrades = portfolioStore.trades.filter(t => t.symbol === props.symbol);
         
-        // Group trades by date to prevent duplicate markers on the same time
-        const tradesByDate = {};
+        // We need to map trade timestamps to the EXACT candle time
+        // If data is minute/hourly, data[i].time is a UNIX timestamp (number)
+        // If daily, it's a string 'YYYY-MM-DD'
+        
+        let validMarkers = [];
         actualTrades.forEach(t => {
-           const tDate = t.timestamp.split('T')[0];
-           if (!tradesByDate[tDate]) tradesByDate[tDate] = { sharesBuy: 0, sharesSell: 0 };
-           if (t.action === 'BUY') tradesByDate[tDate].sharesBuy += t.shares;
-           else tradesByDate[tDate].sharesSell += t.shares;
+           // Find the closest candle for this trade
+           const tradeTimeMs = new Date(t.timestamp).getTime();
+           
+           let closestCandle = null;
+           let minDiff = Infinity;
+           
+           for (const d of data) {
+             const candleTimeMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
+             const diff = Math.abs(candleTimeMs - tradeTimeMs);
+             if (diff < minDiff) {
+               minDiff = diff;
+               closestCandle = d;
+             }
+           }
+           
+           if (closestCandle) {
+             const existingMarker = validMarkers.find(m => m.time === closestCandle.time && m.originalAction === t.action);
+             if (existingMarker) {
+               existingMarker.shares += t.shares;
+               existingMarker.text = `${t.action === 'BUY' ? 'B' : 'S'} ${existingMarker.shares}`;
+             } else {
+               validMarkers.push({
+                 time: closestCandle.time,
+                 originalAction: t.action,
+                 position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
+                 color: t.action === 'BUY' ? '#3fb950' : '#f85149',
+                 shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
+                 shares: t.shares,
+                 text: `${t.action === 'BUY' ? 'B' : 'S'} ${t.shares}`
+               });
+             }
+           }
         });
         
-        for (const [tDate, aggr] of Object.entries(tradesByDate)) {
-           if (aggr.sharesBuy > 0) {
-             markers.push({ time: tDate, position: 'belowBar', color: '#3fb950', shape: 'arrowUp', text: `B ${aggr.sharesBuy}` });
-           }
-           if (aggr.sharesSell > 0) {
-             markers.push({ time: tDate, position: 'aboveBar', color: '#f85149', shape: 'arrowDown', text: `S ${aggr.sharesSell}` });
-           }
-        }
+        // Remove the temporary 'originalAction' and 'shares' properties before passing to Lightweight Charts
+        markers = validMarkers.map(m => ({
+          time: m.time,
+          position: m.position,
+          color: m.color,
+          shape: m.shape,
+          text: m.text
+        }));
 
         const pnlData = data.filter(d => d.total_pnl !== undefined && d.total_pnl !== null).map(d => ({ time: d.time, value: d.total_pnl }));
         if (pnlData.length > 0) {
