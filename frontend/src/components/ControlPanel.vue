@@ -62,6 +62,20 @@ const sendAction = async (action) => {
         </div>
       </div>
 
+
+      <!-- Chart Interval -->
+      <div>
+        <div class="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-widest">[Chart Interval]</div>
+        <select v-model="marketStore.currentInterval" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500 appearance-none text-center">
+          <option value="15m">15 Minutes</option>
+          <option value="30m">30 Minutes</option>
+          <option value="60m">1 Hour</option>
+          <option value="1d">1 Day</option>
+          <option value="1wk">1 Week</option>
+          <option value="1mo">1 Month</option>
+        </select>
+      </div>
+
       <!-- Technical Indicators -->
       <div>
         <div class="text-[10px] text-gray-500 mb-3 font-mono uppercase tracking-widest">Technical Indicators</div>
