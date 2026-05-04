@@ -20,6 +20,30 @@ export const useMarketStore = defineStore('market', {
     watchlistUS: (state) => state.watchlist.filter(i => i.market === 'US'),
   },
   actions: {
+    
+    async addToWatchlist(symbol, market) {
+      try {
+        await axios.post('/api/watchlist', {
+          symbol: symbol,
+          name: '',
+          ref_price: 0.0,
+          market: market
+        });
+        await this.fetchWatchlist();
+      } catch (error) {
+        console.error('Failed to add to watchlist:', error);
+        throw error;
+      }
+    },
+    async removeFromWatchlist(symbol) {
+      try {
+        await axios.delete(`/api/watchlist/${symbol}`);
+        await this.fetchWatchlist();
+      } catch (error) {
+        console.error('Failed to remove from watchlist:', error);
+        throw error;
+      }
+    },
     async fetchWatchlist() {
       try {
         const res = await axios.get('/api/portfolio');

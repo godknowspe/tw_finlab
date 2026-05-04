@@ -25,6 +25,27 @@ const syncTrades = async () => {
 };
 
 
+
+const showWatchlistModal = ref(false);
+const newSymbol = ref({ symbol: '', market: 'TW' });
+
+const submitWatchlist = async () => {
+  if (!newSymbol.value.symbol) return alert("請輸入股票代號");
+  try {
+    await marketStore.addToWatchlist(newSymbol.value.symbol.toUpperCase(), newSymbol.value.market);
+    showWatchlistModal.value = false;
+    newSymbol.value.symbol = '';
+  } catch (e) {
+    alert("新增失敗");
+  }
+};
+
+const deleteWatchlist = async (symbol) => {
+  if (confirm(`確定要從自選股刪除 ${symbol} 嗎？`)) {
+    await marketStore.removeFromWatchlist(symbol);
+  }
+};
+
 const showAddModal = ref(false);
 const newTrade = ref({
   symbol: '',
@@ -85,8 +106,8 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
       <div class="flex justify-between px-4 py-2 text-[10px] text-gray-500 border-b border-border-line items-center bg-[#0d1117] sticky top-0 z-10">
         <span>SYMBOL</span>
         <div class="flex items-center gap-4 mr-2">
-          <span>LAST</span>
-          <span>CHG%</span>
+          <span>LAST / CHG%</span>
+          <Plus @click="showWatchlistModal = true" :size="12" class="text-gray-500 hover:text-white cursor-pointer ml-1" title="Add to Watchlist" />
         </div>
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
@@ -100,9 +121,14 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
                <div class="font-bold text-white text-sm">{{ item.symbol }}</div>
                <div class="text-[10px] text-gray-500 truncate">{{ item.name }}</div>
             </div>
-            <div class="text-right shrink-0">
-               <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
-               <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="text-right">
+                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
+                 <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
+              </div>
+              <button @click.stop="deleteWatchlist(item.symbol)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Remove">
+                <Trash2 :size="12" />
+              </button>
             </div>
           </div>
         </div>
@@ -117,9 +143,14 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
                <div class="font-bold text-white text-sm">{{ item.symbol }}</div>
                <div class="text-[10px] text-gray-500 truncate">{{ item.name }}</div>
             </div>
-            <div class="text-right shrink-0">
-               <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
-               <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="text-right">
+                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
+                 <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
+              </div>
+              <button @click.stop="deleteWatchlist(item.symbol)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Remove">
+                <Trash2 :size="12" />
+              </button>
             </div>
           </div>
         </div>
@@ -187,6 +218,37 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
       </div>
     </div>
   </div>
+
+    
+    <!-- Add Watchlist Modal -->
+    <div v-if="showWatchlistModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+      <div class="bg-gray-900 border border-gray-700 p-5 rounded-lg w-80 shadow-2xl flex flex-col gap-4">
+        <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+          <h3 class="text-white font-bold text-sm">新增自選股</h3>
+          <X @click="showWatchlistModal = false" class="text-gray-500 hover:text-white cursor-pointer" :size="16" />
+        </div>
+        
+        <div class="flex flex-col gap-3 text-xs text-gray-300">
+          <div class="flex flex-col gap-1">
+            <label>股票代號 (Symbol)</label>
+            <input v-model="newSymbol.symbol" @keyup.enter="submitWatchlist" type="text" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500 uppercase" placeholder="e.g. 2330 或 AAPL">
+          </div>
+          
+          <div class="flex flex-col gap-1">
+            <label>市場 (Market)</label>
+            <select v-model="newSymbol.market" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+              <option value="TW">台股 (TW Market)</option>
+              <option value="US">美股 (US Market)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mt-2 flex justify-end gap-2">
+          <button @click="showWatchlistModal = false" class="px-4 py-1.5 rounded text-gray-400 hover:text-white transition-colors">取消</button>
+          <button @click="submitWatchlist" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-1.5 rounded transition-colors">新增</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Add Trade Modal -->
     <div v-if="showAddModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
