@@ -38,7 +38,50 @@ def update_stock_data(stock_id: str, start_date: str, end_date: str, interval: s
     records_added = 0
     records_updated = 0
     
+    # === 異常資料過濾機制 ===
+    from loguru import logger
+    import math
+    prev_close = None
+    
+    # 確保資料是按照時間排序的，才好比對前一根 K 線
+    if 'date' in df.columns:
+        df = df.sort_values(by='date')
+        
     for _, row in df.iterrows():
+        try:
+            c = float(row['close'])
+            o = float(row['open'])
+            h = float(row['high'])
+            l = float(row['low'])
+            v = float(row['volume'])
+        except (ValueError, TypeError):
+            continue
+            
+        if math.isnan(c) or math.isnan(o):
+            continue
+
+        is_anomaly = False
+        anomaly_reason = ""
+        
+        # 1. 振幅過濾防呆：與前一根 K 線對比
+        # 這裡設定 15% 容錯 (台股極限 10%，加密貨幣不適用此限制，但您的標的是台美股)
+        if prev_close is not None and prev_close > 0:
+            pct_change = abs((c - prev_close) / prev_close)
+            # 針對大盤或台股作嚴格過濾
+            if pct_change > 0.15 and (stock_id.endswith('.TW') or stock_id == '^TWII' or is_tw_stock(stock_id)):
+                is_anomaly = True
+                anomaly_reason = f"Extreme price swing > 15% (Prev: {prev_close:.2f}, Cur: {c:.2f})"
+        
+        # 2. 針對 ^TWII 的 yfinance 假日幽靈 K 線：通常量為 0 且沒有波動，或者收盤價極端異常
+        if stock_id == '^TWII' and v == 0 and o == h == l == c:
+            is_anomaly = True
+            anomaly_reason = f"Phantom data detected (Zero Volume, Flat price: {c})"
+            
+        if is_anomaly:
+            logger.warning(f"🚨 [Anomaly Filter] Dropped {stock_id} at {row['date']}: {anomaly_reason}")
+            continue
+            
+        prev_close = c
         # 注意：如果是分 K，row['date'] 會是 Timestamp 對象
         d = row['date']
         if hasattr(d, 'to_pydatetime'):

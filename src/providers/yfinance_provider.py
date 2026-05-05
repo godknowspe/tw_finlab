@@ -78,6 +78,51 @@ class YFinanceProvider(BaseDataProvider):
             "volume": "volume"
         }
         df = df.rename(columns=rename_map)
+        
+        # === 異常資料過濾機制 (Anomaly Detection) ===
+        # 針對 yfinance 容易產生的幽靈資料或極端錯誤值進行過濾，並留下 log
+        filtered_rows = []
+        prev_close = None
+        
+        # 排序確保時間順序正確
+        if 'date' in df.columns:
+            df = df.sort_values(by='date')
+            
+        for idx, row in df.iterrows():
+            is_anomaly = False
+            anomaly_reason = ""
+            
+            c = float(row['close']) if pd.notnull(row['close']) else None
+            v = float(row['volume']) if pd.notnull(row['volume']) else 0
+            
+            if c is None:
+                continue
+                
+            # 1. 幽靈資料特徵：無交易量且開高低收完全一致 (對大盤有效)
+            # 但 yf 的國際指數有時本來就沒 volume，所以主要依賴振幅過濾
+            
+            # 2. 振幅過濾防呆：與前一根 K 棒收盤價對比 (台股漲跌極限為 10%，我們設 15% 為容錯閾值)
+            if prev_close is not None and prev_close > 0:
+                pct_change = abs((c - prev_close) / prev_close)
+                
+                # 如果是台灣標的或大盤指數，單根 K 線波動 > 15% 視為極端異常報價
+                if pct_change > 0.15 and (stock_id.endswith('.TW') or stock_id == '^TWII' or stock_id.isdigit()):
+                    is_anomaly = True
+                    anomaly_reason = f"Extreme price swing > 15% (Prev: {prev_close:.2f}, Cur: {c:.2f})"
+            
+            if is_anomaly:
+                logger.warning(f"🚨 [Anomaly Data Dropped] {stock_id} at {row['date']}: {anomaly_reason}")
+                # 剔除該筆資料，不更新 prev_close
+                continue
+                
+            prev_close = c
+            filtered_rows.append(row)
+            
+        if filtered_rows:
+            df = pd.DataFrame(filtered_rows)
+        else:
+            df = pd.DataFrame(columns=df.columns)
+            
         df["stock_id"] = stock_id
         return df
 

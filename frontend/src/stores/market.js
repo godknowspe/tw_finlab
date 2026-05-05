@@ -99,6 +99,10 @@ export const useMarketStore = defineStore('market', {
             const watchItem = this.watchlist.find(i => i.symbol === data.symbol);
             if (watchItem) {
               watchItem.last = data.price;
+              if (watchItem.ref_price && watchItem.ref_price > 0) {
+                const pct = ((data.price - watchItem.ref_price) / watchItem.ref_price) * 100;
+                watchItem.chg_pct = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
+              }
               watchItem.flashClass = 'flash-green';
               setTimeout(() => { watchItem.flashClass = ''; }, 500);
             }

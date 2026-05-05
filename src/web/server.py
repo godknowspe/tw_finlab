@@ -274,6 +274,7 @@ def get_portfolio(db: Session = Depends(get_db)):
     port_data = portfolio_service.calculate_positions(app_state["trades"])
     symbols = list(port_data["positions"].keys()) + [w["symbol"] for w in app_state["watchlist"]]
     latest_prices = {}
+    prev_prices = {}
     if symbols:
         try:
             yf_syms = []
@@ -290,10 +291,12 @@ def get_portfolio(db: Session = Depends(get_db)):
                     try:
                         if len(yf_syms) > 1:
                             v = data['Close'][yf_s].dropna()
-                            if not v.empty: latest_prices[s] = float(v.iloc[-1])
                         else:
                             v = data['Close'].dropna()
-                            if not v.empty: latest_prices[s] = float(v.iloc[-1])
+                        
+                        if not v.empty:
+                            latest_prices[s] = float(v.iloc[-1])
+                            prev_prices[s] = float(v.iloc[-2]) if len(v) > 1 else float(v.iloc[-1])
                     except: pass
         except: pass
     enriched = portfolio_service.enrich_portfolio(port_data, latest_prices)
@@ -302,13 +305,15 @@ def get_portfolio(db: Session = Depends(get_db)):
         sym = item["symbol"]
         last = latest_prices.get(sym, item.get("ref_price", 0))
         last = float(last) if not (pd.isna(last) or np.isinf(last)) else 0.0
-        ref_price = float(item.get("ref_price", 0))
-        ref_price = ref_price if not (pd.isna(ref_price) or np.isinf(ref_price)) else 0.0
-        chg_pct = (last - ref_price) / ref_price * 100 if ref_price != 0 else 0
+        
+        # 使用抓取到的昨日收盤價計算漲跌幅
+        prev = prev_prices.get(sym, last)
+        
+        chg_pct = (last - prev) / prev * 100 if prev != 0 else 0
         enriched_watchlist.append({
-            "symbol": sym, "name": item.get("name", sym), "ref_price": ref_price,
+            "symbol": sym, "name": item.get("name", sym), "ref_price": prev,
             "market": item.get("market", "TW"), "last": round(last, 2),
-            "chg_pct": f"{'+' if chg_pct >= 0 else ''}{chg_pct:.2f}%"
+            "chg_pct": f"{'+' if chg_pct > 0 else ''}{chg_pct:.2f}%"
         })
     return {
         "watchlist": enriched_watchlist, "positions": enriched["positions"],
