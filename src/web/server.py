@@ -539,7 +539,11 @@ async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db
                 
                 if us_syms:
                     try:
-                        data = await asyncio.to_thread(yf.download, us_syms, period="5d", progress=False)
+                        # 加上 3 秒 Timeout 強制熔斷，防止 yfinance 卡死執行緒
+                        data = await asyncio.wait_for(
+                            asyncio.to_thread(yf.download, us_syms, period="5d", progress=False),
+                            timeout=3.0
+                        )
                         if not data.empty:
                             for s in symbols:
                                 is_tw = s.isdigit()
@@ -555,6 +559,8 @@ async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db
                                             last_prices[actual_s] = price
                                             updates.append({"symbol": actual_s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
                                 except: pass
+                    except asyncio.TimeoutError:
+                        logger.warning(f"YF WS fetch TIMEOUT (>3s), skipping this tick to avoid thread lock.")
                     except Exception as e:
                         logger.error(f"YF WS fetch error: {e}")
 
