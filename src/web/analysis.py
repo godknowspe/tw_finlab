@@ -148,3 +148,113 @@ def calculate_trade_analysis(trades):
 
     return analysis_results
 
+
+import json
+import datetime
+from src.data.models import get_engine
+
+def calculate_historical_equity(trades, initial_cash_twd, initial_cash_usd, usd_twd_rate=32.5):
+    if not trades:
+        return {"tw": [], "us": [], "total": []}
+        
+    symbols = set(t["symbol"] for t in trades)
+    db_syms = list(symbols) + [s + ".TW" for s in symbols if s.isdigit()]
+    
+    engine = get_engine()
+    
+    if len(db_syms) == 1:
+        query = f"SELECT stock_id, date, close FROM daily_price WHERE stock_id = '{db_syms[0]}' AND interval='1d' ORDER BY date"
+    else:
+        query = f"SELECT stock_id, date, close FROM daily_price WHERE stock_id IN {tuple(db_syms)} AND interval='1d' ORDER BY date"
+        
+    df_prices = pd.read_sql(query, engine)
+    
+    trades_by_date = {}
+    for t in trades:
+        dt = datetime.datetime.fromisoformat(t["timestamp"]).date()
+        if dt not in trades_by_date:
+            trades_by_date[dt] = []
+        trades_by_date[dt].append(t)
+        
+    start_date = min(trades_by_date.keys())
+    end_date = datetime.date.today()
+    
+    prices_by_date = {}
+    for _, row in df_prices.iterrows():
+        d = pd.to_datetime(row['date']).date()
+        if d not in prices_by_date:
+            prices_by_date[d] = {}
+        sym = row['stock_id'].replace('.TW', '') if row['stock_id'].endswith('.TW') else row['stock_id']
+        prices_by_date[d][sym] = float(row['close'])
+        
+    cash_twd = float(initial_cash_twd)
+    cash_usd = float(initial_cash_usd)
+    positions = {}
+    
+    result_tw = []
+    result_us = []
+    result_total = []
+    
+    last_known_prices = {}
+    
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date in trades_by_date:
+            # Sort trades by timestamp to ensure correct order
+            day_trades = sorted(trades_by_date[current_date], key=lambda x: x["timestamp"])
+            for t in day_trades:
+                sym = t["symbol"]
+                shares = float(t["shares"])
+                price = float(t["price"])
+                currency = t.get("currency", "TWD")
+                
+                if sym not in positions:
+                    positions[sym] = {"shares": 0, "currency": currency}
+                    
+                if t["action"] == "BUY":
+                    positions[sym]["shares"] += shares
+                    if currency == "TWD":
+                        cash_twd -= shares * price
+                    else:
+                        cash_usd -= shares * price
+                elif t["action"] == "SELL":
+                    sell_shares = min(shares, positions[sym]["shares"])
+                    positions[sym]["shares"] -= sell_shares
+                    if currency == "TWD":
+                        cash_twd += sell_shares * price
+                    else:
+                        cash_usd += sell_shares * price
+                        
+        if current_date in prices_by_date:
+            for sym, p in prices_by_date[current_date].items():
+                last_known_prices[sym] = p
+                
+        if current_date.weekday() < 5:
+            mv_twd = 0.0
+            mv_usd = 0.0
+            for sym, pos in positions.items():
+                if pos["shares"] > 0:
+                    # 如果當天還沒有任何歷史價格，就拿買進成本當作臨時價格
+                    # 這裡為了簡單，我們可以直接拿 trades 裡的價格，但上面沒存。所以用 last_known_prices。
+                    p = last_known_prices.get(sym, 0.0) 
+                    if pos["currency"] == "TWD":
+                        mv_twd += pos["shares"] * p
+                    else:
+                        mv_usd += pos["shares"] * p
+                        
+            eq_twd = cash_twd + mv_twd
+            eq_usd = cash_usd + mv_usd
+            eq_total = eq_twd + (eq_usd * float(usd_twd_rate))
+            
+            date_str = current_date.strftime('%Y-%m-%d')
+            result_tw.append({"time": date_str, "value": round(eq_twd, 2)})
+            result_us.append({"time": date_str, "value": round(eq_usd, 2)})
+            result_total.append({"time": date_str, "value": round(eq_total, 2)})
+            
+        current_date += datetime.timedelta(days=1)
+        
+    return {
+        "tw": result_tw,
+        "us": result_us,
+        "total": result_total
+    }

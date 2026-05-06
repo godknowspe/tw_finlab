@@ -453,26 +453,20 @@ def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d", db:
 
 @app.get("/api/equity")
 def get_equity():
-    random.seed(42)
-    today = datetime.date.today()
-    result = []
-    base_value = 1000000.0
+    from src.web.analysis import calculate_historical_equity
+    trades = app_state.get("trades", [])
+    cash_twd = app_state["cash"].get("TWD", 1000000)
+    cash_usd = app_state["cash"].get("USD", 50000)
     
-    for i in range(3650, -1, -1):
-        dt = today - datetime.timedelta(days=i)
-        if dt.weekday() >= 5:
-            continue
-            
-        if not result:
-            val = base_value
-        else:
-            val = result[-1]["value"] * random.uniform(0.992, 1.009)
-        
-        result.append({
-            "time": dt.strftime('%Y-%m-%d'),
-            "value": round(val, 2)
-        })
-    return result
+    # 預設匯率 32.5
+    usd_twd_rate = app_state["settings"].get("usd_twd_rate", 32.5)
+    
+    try:
+        equity_data = calculate_historical_equity(trades, cash_twd, cash_usd, usd_twd_rate)
+        return equity_data
+    except Exception as e:
+        logger.error(f"Equity calculation error: {e}")
+        return {"tw": [], "us": [], "total": []}
 
 @app.get("/api/analysis")
 def get_trade_analysis():

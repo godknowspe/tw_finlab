@@ -13,6 +13,23 @@ const props = defineProps({
 const marketStore = useMarketStore();
 const portfolioStore = usePortfolioStore();
 const chartContainer = ref(null);
+const showEqTotal = ref(true);
+const showEqTW = ref(true);
+const showEqUS = ref(true);
+
+const toggleEquityLine = (type) => {
+  if (type === 'Total') {
+    showEqTotal.value = !showEqTotal.value;
+    if (equityTotalSeries) equityTotalSeries.applyOptions({ visible: showEqTotal.value });
+  } else if (type === 'TW') {
+    showEqTW.value = !showEqTW.value;
+    if (equityTWSeries) equityTWSeries.applyOptions({ visible: showEqTW.value });
+  } else if (type === 'US') {
+    showEqUS.value = !showEqUS.value;
+    if (equityUSSeries) equityUSSeries.applyOptions({ visible: showEqUS.value });
+  }
+};
+
 const legendPos = ref({ x: 12, y: 12 });
 const isLegendExpanded = ref(true);
 let isDragging = false;
@@ -46,7 +63,9 @@ const legendData = ref({
 let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
-let equitySeries = null;
+let equityTotalSeries = null;
+let equityTWSeries = null;
+let equityUSSeries = null;
 let pnlSeries = null;
 let backtestLineSeries = null;
 let indicatorSeries = {}; 
@@ -283,7 +302,9 @@ const fetchData = async () => {
       markers.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
       candleSeries.setMarkers(markers);
 
-      if (equitySeries) { chart.removeSeries(equitySeries); equitySeries = null; }
+      if (equityTotalSeries) { chart.removeSeries(equityTotalSeries); equityTotalSeries = null; }
+      if (equityTWSeries) { chart.removeSeries(equityTWSeries); equityTWSeries = null; }
+      if (equityUSSeries) { chart.removeSeries(equityUSSeries); equityUSSeries = null; }
       const barsToDisplay = 120;
       if (data.length > barsToDisplay) {
         chart.timeScale().setVisibleRange({ from: data[data.length - barsToDisplay].time, to: data[data.length - 1].time });
@@ -309,8 +330,15 @@ const fetchData = async () => {
       const res = await axios.get('/api/equity');
       const data = res.data;
       candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
-      if (!equitySeries) equitySeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2 });
-      equitySeries.setData(data); chart.timeScale().fitContent();
+      if (!equityTotalSeries) equityTotalSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 3, title: 'Total' });
+      if (!equityTWSeries) equityTWSeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2, title: 'TW (TWD)' });
+      if (!equityUSSeries) equityUSSeries = chart.addLineSeries({ color: '#f87171', lineWidth: 2, title: 'US (USD)' });
+      
+      if (data.total && data.total.length) equityTotalSeries.setData(data.total);
+      if (data.tw && data.tw.length) equityTWSeries.setData(data.tw);
+      if (data.us && data.us.length) equityUSSeries.setData(data.us);
+      
+      chart.timeScale().fitContent();
     } catch (e) { console.error('Equity Error:', e); }
   }
 };
@@ -323,6 +351,13 @@ onUnmounted(() => { if (chart) chart.remove(); });
 <template>
   <div class="relative w-full h-full select-none overflow-hidden">
     <div ref="chartContainer" class="absolute inset-0"></div>
+    
+    <!-- Equity Controls -->
+    <div v-if="mode === 'equity'" class="absolute top-4 right-4 z-20 flex gap-2">
+      <button @click="toggleEquityLine('Total')" :class="showEqTotal ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-1 text-xs font-bold border rounded transition-colors cursor-pointer select-none">Total</button>
+      <button @click="toggleEquityLine('TW')" :class="showEqTW ? 'bg-blue-500/20 text-blue-500 border-blue-500' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-1 text-xs font-bold border rounded transition-colors cursor-pointer select-none">TW (TWD)</button>
+      <button @click="toggleEquityLine('US')" :class="showEqUS ? 'bg-red-500/20 text-red-500 border-red-500' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-1 text-xs font-bold border rounded transition-colors cursor-pointer select-none">US (USD)</button>
+    </div>
     <div :style="{ top: legendPos.y + 'px', left: legendPos.x + 'px' }" class="absolute bg-black/80 backdrop-blur-md border border-white/10 p-3 rounded-lg text-[11px] z-20 shadow-2xl flex flex-col gap-2 min-w-[220px] transition-opacity hover:opacity-100 opacity-90">
       <div @mousedown.prevent="startDrag" class="flex justify-between items-center border-b border-white/10 pb-1.5 cursor-move" title="Drag to move">
         <div class="flex items-center gap-2">
