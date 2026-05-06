@@ -119,6 +119,29 @@ const initChart = () => {
     
     if (!param.seriesPrices) return;
 
+    if (props.mode === 'equity') {
+      let timeStr = '';
+      if (typeof param.time === 'string') timeStr = param.time;
+      else if (typeof param.time === 'number') timeStr = new Date(param.time * 1000).toLocaleDateString();
+      else if (param.time?.year) timeStr = `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`;
+
+      const newLegend = { time: timeStr, indicators: {} };
+      if (equityTotalSeries) {
+        const val = param.seriesPrices.get(equityTotalSeries);
+        if (val !== undefined && val !== null) newLegend.indicators['Total ROI'] = val.toFixed(2) + '%';
+      }
+      if (equityTWSeries) {
+        const val = param.seriesPrices.get(equityTWSeries);
+        if (val !== undefined && val !== null) newLegend.indicators['TW ROI'] = val.toFixed(2) + '%';
+      }
+      if (equityUSSeries) {
+        const val = param.seriesPrices.get(equityUSSeries);
+        if (val !== undefined && val !== null) newLegend.indicators['US ROI'] = val.toFixed(2) + '%';
+      }
+      legendData.value = newLegend;
+      return;
+    }
+
     const mainData = param.seriesPrices.get(candleSeries);
     if (mainData) {
       let timeStr = '';
@@ -342,6 +365,20 @@ const fetchData = async () => {
       if (data.us && data.us.length) equityUSSeries.setData(data.us);
       
       chart.timeScale().fitContent();
+      
+      if (data.total && data.total.length > 0) {
+        const last = data.total[data.total.length - 1];
+        const lastTw = data.tw && data.tw.length ? data.tw[data.tw.length - 1].value : 0;
+        const lastUs = data.us && data.us.length ? data.us[data.us.length - 1].value : 0;
+        legendData.value = {
+          time: last.time,
+          indicators: {
+            'Total ROI': last.value.toFixed(2) + '%',
+            'TW ROI': lastTw.toFixed(2) + '%',
+            'US ROI': lastUs.toFixed(2) + '%'
+          }
+        };
+      }
     } catch (e) { console.error('Equity Error:', e); }
   }
 };
@@ -372,7 +409,7 @@ onUnmounted(() => { if (chart) chart.remove(); });
         </button>
       </div>
       <div v-show="isLegendExpanded" class="flex flex-col gap-2">
-        <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        <div v-if="mode !== 'equity'" class="grid grid-cols-2 gap-x-4 gap-y-1.5">
           <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">OPEN</span><span class="text-white font-mono">{{ legendData.open }}</span></div>
           <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">HIGH</span><span class="text-white font-mono">{{ legendData.high }}</span></div>
           <div class="flex justify-between items-center"><span class="text-gray-500 text-[10px]">LOW</span><span class="text-white font-mono">{{ legendData.low }}</span></div>
@@ -384,7 +421,7 @@ onUnmounted(() => { if (chart) chart.remove(); });
         <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
           <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">
             <span class="text-gray-500 text-[9px] uppercase tracking-tighter">{{ id.replace('_', ' ') }}</span>
-            <span :class="id.includes('PnL') ? (parseFloat(val) >= 0 ? 'text-text-green' : 'text-text-red') : 'text-blue-400'" class="font-mono font-bold">{{ val }}</span>
+            <span :class="(id.includes('PnL') || id.includes('ROI')) ? (parseFloat(val) >= 0 ? 'text-text-green' : 'text-text-red') : 'text-blue-400'" class="font-mono font-bold">{{ val }}</span>
           </div>
         </div>
       </div>
