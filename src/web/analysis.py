@@ -187,8 +187,15 @@ def calculate_historical_equity(trades, initial_cash_twd, initial_cash_usd, usd_
         sym = row['stock_id'].replace('.TW', '') if row['stock_id'].endswith('.TW') else row['stock_id']
         prices_by_date[d][sym] = float(row['close'])
         
-    cash_twd = float(initial_cash_twd)
-    cash_usd = float(initial_cash_usd)
+    # 我們不再依賴初始現金來計算絕對 Equity，而是採用累積投入本金來計算報酬率 (ROI %)
+    cash_twd = 0.0
+    cash_usd = 0.0
+    
+    # 紀錄我們總共投入了多少本金 (只增不減，或是每次入金時增加)
+    # 為了簡化，只要買入時如果 cash 不夠，就是「入金」
+    total_invested_twd = 0.0
+    total_invested_usd = 0.0
+    
     positions = {}
     
     result_tw = []
@@ -213,10 +220,20 @@ def calculate_historical_equity(trades, initial_cash_twd, initial_cash_usd, usd_
                     
                 if t["action"] == "BUY":
                     positions[sym]["shares"] += shares
+                    cost = shares * price
                     if currency == "TWD":
-                        cash_twd -= shares * price
+                        if cash_twd < cost:
+                            # 閒置現金不夠買，必須從外部入金
+                            deposit = cost - cash_twd
+                            total_invested_twd += deposit
+                            cash_twd += deposit
+                        cash_twd -= cost
                     else:
-                        cash_usd -= shares * price
+                        if cash_usd < cost:
+                            deposit = cost - cash_usd
+                            total_invested_usd += deposit
+                            cash_usd += deposit
+                        cash_usd -= cost
                 elif t["action"] == "SELL":
                     sell_shares = min(shares, positions[sym]["shares"])
                     positions[sym]["shares"] -= sell_shares
@@ -246,10 +263,20 @@ def calculate_historical_equity(trades, initial_cash_twd, initial_cash_usd, usd_
             eq_usd = cash_usd + mv_usd
             eq_total = eq_twd + (eq_usd * float(usd_twd_rate))
             
+            # 總投入成本
+            base_twd = total_invested_twd
+            base_usd = total_invested_usd
+            base_total = base_twd + (base_usd * float(usd_twd_rate))
+            
+            # 計算 ROI (%)
+            roi_twd = ((eq_twd / base_twd) - 1.0) * 100 if base_twd > 0 else 0.0
+            roi_usd = ((eq_usd / base_usd) - 1.0) * 100 if base_usd > 0 else 0.0
+            roi_total = ((eq_total / base_total) - 1.0) * 100 if base_total > 0 else 0.0
+            
             date_str = current_date.strftime('%Y-%m-%d')
-            result_tw.append({"time": date_str, "value": round(eq_twd, 2)})
-            result_us.append({"time": date_str, "value": round(eq_usd, 2)})
-            result_total.append({"time": date_str, "value": round(eq_total, 2)})
+            result_tw.append({"time": date_str, "value": round(roi_twd, 2)})
+            result_us.append({"time": date_str, "value": round(roi_usd, 2)})
+            result_total.append({"time": date_str, "value": round(roi_total, 2)})
             
         current_date += datetime.timedelta(days=1)
         

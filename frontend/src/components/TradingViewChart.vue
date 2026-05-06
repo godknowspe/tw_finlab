@@ -330,9 +330,12 @@ const fetchData = async () => {
       const res = await axios.get('/api/equity');
       const data = res.data;
       candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
-      if (!equityTotalSeries) equityTotalSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 3, title: 'Total' });
-      if (!equityTWSeries) equityTWSeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2, title: 'TW (TWD)' });
-      if (!equityUSSeries) equityUSSeries = chart.addLineSeries({ color: '#f87171', lineWidth: 2, title: 'US (USD)' });
+      const eqOptions = {
+        priceFormat: { type: 'custom', formatter: price => price.toFixed(2) + '%' }
+      };
+      if (!equityTotalSeries) equityTotalSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 3, title: 'Total ROI', ...eqOptions });
+      if (!equityTWSeries) equityTWSeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2, title: 'TW ROI', ...eqOptions });
+      if (!equityUSSeries) equityUSSeries = chart.addLineSeries({ color: '#f87171', lineWidth: 2, title: 'US ROI', ...eqOptions });
       
       if (data.total && data.total.length) equityTotalSeries.setData(data.total);
       if (data.tw && data.tw.length) equityTWSeries.setData(data.tw);
