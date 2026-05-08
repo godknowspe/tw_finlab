@@ -276,29 +276,40 @@ def get_portfolio(db: Session = Depends(get_db)):
     latest_prices = {}
     prev_prices = {}
     if symbols:
-        try:
-            yf_syms = []
-            for s in set(symbols):
-                if s.startswith("^") or "." in s: yf_syms.append(s)
-                elif s.isdigit(): yf_syms.append(f"{s}.TW")
-                else: yf_syms.append(s)
-            data = yf.download(yf_syms, period="5d", progress=False)
-            if not data.empty:
-                for s in set(symbols):
-                    if s.startswith("^") or "." in s: yf_s = s
-                    elif s.isdigit(): yf_s = f"{s}.TW"
-                    else: yf_s = s
-                    try:
-                        if len(yf_syms) > 1:
-                            v = data['Close'][yf_s].dropna()
-                        else:
-                            v = data['Close'].dropna()
-                        
-                        if not v.empty:
-                            latest_prices[s] = float(v.iloc[-1])
-                            prev_prices[s] = float(v.iloc[-2]) if len(v) > 1 else float(v.iloc[-1])
-                    except: pass
-        except: pass
+        # 1. 優先使用 Shioaji 獲取台股的即時報價與精準「昨日收盤參考價」
+        tw_syms = [s for s in set(symbols) if s.isdigit()]
+        if shioaji_api and tw_syms:
+            try:
+                contracts = []
+                for s in tw_syms:
+                    contract = shioaji_api.Contracts.Stocks.get(s)
+                    if contract: contracts.append(contract)
+                
+                if contracts:
+                    snapshots = shioaji_api.snapshots(contracts)
+                    for idx, snap in enumerate(snapshots):
+                        s = contracts[idx].code
+                        if snap and snap.close > 0:
+                            latest_prices[s] = float(snap.close)
+                        if hasattr(contracts[idx], 'reference') and contracts[idx].reference:
+                            prev_prices[s] = float(contracts[idx].reference)
+            except Exception as e:
+                logger.error(f"Shioaji portfolio sync error: {e}")
+                
+        # 2. 其他（美股、指數）或沒有 Shioaji 的台股，使用 yfinance fast_info 以獲得精確的前日收盤價
+        yf_syms = [s for s in set(symbols) if s not in latest_prices]
+        if yf_syms:
+            for s in yf_syms:
+                yf_s = f"{s}.TW" if s.isdigit() else s
+                try:
+                    t = yf.Ticker(yf_s)
+                    fast_info = t.fast_info
+                    if "lastPrice" in fast_info:
+                        latest_prices[s] = float(fast_info["lastPrice"])
+                    if "previousClose" in fast_info:
+                        prev_prices[s] = float(fast_info["previousClose"])
+                except Exception as e:
+                    pass
     enriched = portfolio_service.enrich_portfolio(port_data, latest_prices)
     enriched_watchlist = []
     for item in app_state["watchlist"]:
@@ -493,6 +504,9 @@ async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db
         except Exception as e:
             logger.error(f"WS Shioaji API Error: {e}")
 
+    import time
+    last_yf_fetch_time = 0
+    
     try:
         while True:
             symbols = [w["symbol"] for w in app_state["watchlist"]]
@@ -531,12 +545,15 @@ async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db
                 if not shioaji_api:
                     us_syms.extend([f"{s}.TW" for s in symbols if s.isdigit()])
                 
-                if us_syms:
+                # 美股限制為每 60 秒才抓取一次，避免 yfinance 頻繁啟動執行緒導致 File Descriptor 耗盡 (OS Errno 24)
+                current_time = time.time()
+                if us_syms and (current_time - last_yf_fetch_time > 60):
+                    last_yf_fetch_time = current_time
                     try:
-                        # 加上 3 秒 Timeout 強制熔斷，防止 yfinance 卡死執行緒
+                        # 加上 5 秒 Timeout
                         data = await asyncio.wait_for(
                             asyncio.to_thread(yf.download, us_syms, period="5d", progress=False),
-                            timeout=3.0
+                            timeout=5.0
                         )
                         if not data.empty:
                             for s in symbols:
