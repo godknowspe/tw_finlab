@@ -38,6 +38,15 @@ from src.providers.factory import ProviderFactory
 
 app = FastAPI(title="TW FinLab Quant Dashboard")
 
+@app.on_event("startup")
+def on_startup():
+    try:
+        logger.info("Server starting up, performing initial portfolio export...")
+        from src.services.portfolio_exporter import trigger_portfolio_export
+        trigger_portfolio_export(app_state)
+    except Exception as e:
+        logger.error(f"Startup portfolio export error: {e}")
+
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_state.json")
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
@@ -84,6 +93,14 @@ def save_app_state(state):
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(state, f, ensure_ascii=False, indent=4)
         os.replace(tmp_path, STATE_FILE)
+        
+        # Trigger portfolio export whenever app state changes
+        try:
+            from src.services.portfolio_exporter import trigger_portfolio_export
+            trigger_portfolio_export(state)
+        except Exception as ex:
+            logger.error(f"Failed to export portfolio on save: {ex}")
+            
     except Exception as e:
         logger.error(f"SAVE ERROR: {e}")
 

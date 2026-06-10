@@ -47,37 +47,37 @@ class PortfolioService:
                 pos["shares"] -= sell_shares
                 cash_usd += (sell_shares * price)
 
-        # 2. 處理台股 (如果 Shioaji API 可用，優先從真實帳戶同步)
+        # 2. 處理台股 (一律從 Trades 計算，確保手動輸入的 Trade 會反映在庫存、現金與已實現損益中)
+        tw_trades = [t for t in trades if t not in us_trades]
+        sorted_tw_trades = sorted(tw_trades, key=lambda x: x["timestamp"])
+        for t in sorted_tw_trades:
+            sym = t["symbol"]
+            if sym not in positions:
+                positions[sym] = {"shares": 0, "avg_cost": 0.0, "currency": "TWD", "realized_pnl": 0.0}
+            pos = positions[sym]
+            if t["action"] == "BUY":
+                pos["avg_cost"] = ((pos["shares"] * pos["avg_cost"]) + (t["shares"] * t["price"])) / (pos["shares"] + t["shares"])
+                pos["shares"] += t["shares"]
+                cash_twd -= (t["shares"] * t["price"])
+            elif t["action"] == "SELL":
+                sell_shares = min(t["shares"], pos["shares"])
+                realized_pnl_twd += (t["price"] - pos["avg_cost"]) * sell_shares
+                pos["shares"] -= sell_shares
+                cash_twd += (sell_shares * t["price"])
+
+        # 如果 Shioaji API 可用，我們僅更新從真實帳戶取得的未實現盈虧與即時價格，不覆蓋手動帳本的股數
         if self.shioaji_api:
-            logger.info("Syncing Taiwan positions from Shioaji API...")
-            sj_positions = fetch_shioaji_positions(self.shioaji_api)
-            for p in sj_positions:
-                positions[p["symbol"]] = {
-                    "shares": p["shares"],
-                    "avg_cost": p["avg_cost"],
-                    "currency": "TWD",
-                    "realized_pnl": 0.0,
-                    "real_pnl": p.get("real_pnl", 0.0), # 儲存 API 傳回的真實未實現盈虧
-                    "api_last_price": p.get("last_price")
-                }
-        else:
-            # Fallback to trades logic for TW stocks if no API
-            tw_trades = [t for t in trades if t not in us_trades]
-            sorted_tw_trades = sorted(tw_trades, key=lambda x: x["timestamp"])
-            for t in sorted_tw_trades:
-                sym = t["symbol"]
-                if sym not in positions:
-                    positions[sym] = {"shares": 0, "avg_cost": 0.0, "currency": "TWD", "realized_pnl": 0.0}
-                pos = positions[sym]
-                if t["action"] == "BUY":
-                    pos["avg_cost"] = ((pos["shares"] * pos["avg_cost"]) + (t["shares"] * t["price"])) / (pos["shares"] + t["shares"])
-                    pos["shares"] += t["shares"]
-                    cash_twd -= (t["shares"] * t["price"])
-                elif t["action"] == "SELL":
-                    sell_shares = min(t["shares"], pos["shares"])
-                    realized_pnl_twd += (t["price"] - pos["avg_cost"]) * sell_shares
-                    pos["shares"] -= sell_shares
-                    cash_twd += (sell_shares * t["price"])
+            try:
+                logger.info("Syncing Taiwan positions from Shioaji API for real PnL and pricing...")
+                sj_positions = fetch_shioaji_positions(self.shioaji_api)
+                for p in sj_positions:
+                    sym = p["symbol"]
+                    if sym in positions:
+                        # 僅附加 broker 提供的真實 PnL 與報價，保留 Ledger 計算出來的 shares 與 avg_cost
+                        positions[sym]["real_pnl"] = p.get("real_pnl", 0.0)
+                        positions[sym]["api_last_price"] = p.get("last_price")
+            except Exception as e:
+                logger.error(f"Failed to sync Shioaji positions for PnL: {e}")
 
         return {
             "positions": positions,
