@@ -1,22 +1,22 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import MarketSidebar from './components/MarketSidebar.vue';
 import TradingViewChart from './components/TradingViewChart.vue';
 import ControlPanel from './components/ControlPanel.vue';
 import AnalysisView from './components/AnalysisView.vue';
 import { useMarketStore } from './stores/market';
-import { usePortfolioStore } from './stores/portfolio';
 import { Layout } from 'lucide-vue-next';
 
 const marketStore = useMarketStore();
-const portfolioStore = usePortfolioStore();
 
 const chartMode = ref('symbol');
 const showRightPanel = ref(true);
 
+// A backtest result belongs to one (symbol, interval, strategy); drop it when any of them change.
+watch(() => [marketStore.currentInterval, marketStore.selectedStrategy], () => marketStore.clearBacktest());
+
 onMounted(() => {
   marketStore.fetchWatchlist();
-  portfolioStore.fetchPortfolio();
   marketStore.connectWebSocket();
 });
 </script>

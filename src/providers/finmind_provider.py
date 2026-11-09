@@ -17,7 +17,12 @@ class FinMindProvider(BaseDataProvider):
         if interval != "1d":
             logger.warning(f"FinMind only supports 1d interval, requested: {interval}")
             return pd.DataFrame()
-        return fetch_taiwan_stock_daily(stock_id, start_date, end_date)
+        df = fetch_taiwan_stock_daily(stock_id, start_date, end_date)
+        if df.empty:
+            return df
+        df = df.set_index(pd.to_datetime(df["date"]))[["open", "high", "low", "close", "volume"]]
+        df.index.name = "date"
+        return df
 
     def fetch_realtime_quote(self, stock_id: str) -> Optional[dict]:
         # FinMind 即時報價需要另外的 API，暫時實作基礎

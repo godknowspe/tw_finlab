@@ -79,3 +79,10 @@ node_modules/
 shioaji.log
 src/web/app_state.json
 src/test_shioaji.py
+
+# macOS metadata / runtime logs
+._*
+.DS_Store
+*.log
+.playwright-mcp/
+*.lock

@@ -1,7 +1,7 @@
 <script setup>
 import { usePortfolioStore } from '@/stores/portfolio';
 import { useMarketStore } from '@/stores/market';
-import { Settings, Zap, Play, BarChart2, CheckCircle2, Circle } from 'lucide-vue-next';
+import { Play, BarChart2, CheckCircle2, Circle, Cloud } from 'lucide-vue-next';
 
 const portfolioStore = usePortfolioStore();
 const marketStore = useMarketStore();
@@ -17,27 +17,21 @@ const indicators = [
   { id: 'RSI', label: 'RSI' }
 ];
 
-const sendAction = async (action) => {
-  try {
-    await fetch('/api/actions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action })
-    });
-    portfolioStore.fetchPortfolio();
-  } catch (e) { console.error(e); }
+const syncLabel = (st) => {
+  if (!st) return '-';
+  if (st.enabled === false) return 'off';
+  return st.state + (st.error ? ' (' + st.error + ')' : '');
 };
 </script>
 
 <template>
   <div class="bg-panel-bg border-l border-border-line flex flex-col transition-all duration-300 shrink-0" :class="collapsed ? 'w-0 overflow-hidden border-none' : 'w-72'">
-    <!-- Section 1: Agent Status -->
-    <div class="p-4 border-b border-border-line flex items-center justify-between bg-black/20">
-      <div class="flex items-center gap-2">
-        <Zap class="w-4 h-4" :class="portfolioStore.agentState?.halted ? 'text-text-red' : 'text-text-green'" />
-        <span class="font-bold tracking-wider text-gray-400 text-[10px] uppercase">Agent System Status</span>
-      </div>
-      <Settings :size="14" class="text-gray-500 cursor-pointer hover:text-white" />
+    <div class="p-4 border-b border-border-line flex items-center gap-2 bg-black/20">
+      <Cloud :size="14" class="text-gray-500" />
+      <span class="font-bold tracking-wider text-gray-400 text-[10px] uppercase">Sync</span>
+      <span class="ml-auto text-[9px] font-mono text-gray-500 text-right truncate" :title="JSON.stringify(portfolioStore.sync)">
+        git: {{ syncLabel(portfolioStore.sync.git) }} · gist: {{ syncLabel(portfolioStore.sync.export) }}
+      </span>
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
@@ -58,6 +52,9 @@ const sendAction = async (action) => {
           <div class="flex justify-between text-[10px]">
             <span class="text-gray-500">USD Cash:</span>
             <span>${{ portfolioStore.summary?.cash_usd?.toLocaleString() }}</span>
+          </div>
+          <div v-if="portfolioStore.summary?.estimated_prices?.length" class="text-[9px] text-yellow-500 pt-1">
+            No price for {{ portfolioStore.summary.estimated_prices.join(', ') }}; valued at cost.
           </div>
         </div>
       </div>
@@ -128,33 +125,6 @@ const sendAction = async (action) => {
         </div>
       </div>
 
-      <!-- Risk Control -->
-      <div class="pt-2 border-t border-gray-800/50">
-        <div class="text-[10px] text-gray-500 mb-3 font-mono uppercase tracking-widest">Risk Management</div>
-        <div class="space-y-3 text-xs">
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Take Profit (%)</span>
-            <input type="number" v-model="portfolioStore.settings.take_profit_pct" class="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-right text-white focus:border-blue-500 outline-none">
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Stop Loss (%)</span>
-            <input type="number" v-model="portfolioStore.settings.stop_loss_pct" class="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-right text-white focus:border-blue-500 outline-none">
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Actions -->
-    <div class="p-4 border-t border-border-line space-y-2 bg-black/10">
-      <button @click="sendAction('execute')" :disabled="portfolioStore.agentState?.halted" class="w-full py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-gray-300 font-bold text-[10px] rounded border border-gray-600 transition tracking-widest">
-        ⚡️ FORCE AGENT RUN
-      </button>
-      <button v-if="!portfolioStore.agentState?.halted" @click="sendAction('halt')" class="w-full py-2 bg-red-900/20 hover:bg-red-900/40 text-text-red font-bold text-[10px] rounded border border-text-red/50 transition tracking-widest uppercase">
-        Emergency Halt
-      </button>
-      <button v-else @click="sendAction('resume')" class="w-full py-2 bg-green-900/20 hover:bg-green-900/40 text-text-green font-bold text-[10px] rounded border border-text-green/50 transition tracking-widest uppercase">
-        Resume Trading
-      </button>
     </div>
   </div>
 </template>

@@ -22,7 +22,9 @@ class ShioajiProvider(BaseDataProvider):
     @retry(max_attempts=3, delay=2, backoff=2)
     def fetch_kbars(self, stock_id: str, start_date: str, end_date: str, interval: str = "1d") -> pd.DataFrame:
         logger.info(f"Shioaji: Fetching kbars for {stock_id} (interval: {interval})")
-        # Shioaji 的 kbars 支援不同 interval，這裡暫時處理 1d
+        if interval != "1d" or not stock_id.isdigit():
+            # Only daily bars of TW stocks are built here; the caller falls back to yfinance.
+            return pd.DataFrame()
         return fetch_shioaji_kbars(self.api, stock_id, start_date, end_date)
 
     @retry(max_attempts=3, delay=2, backoff=2)

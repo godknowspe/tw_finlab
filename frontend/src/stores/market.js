@@ -1,5 +1,8 @@
 import { defineStore } from 'pinia';
 import axios from 'axios';
+import { usePortfolioStore } from './portfolio';
+
+let backtestGeneration = 0;
 
 export const useMarketStore = defineStore('market', {
   state: () => ({
@@ -8,7 +11,6 @@ export const useMarketStore = defineStore('market', {
     currentInterval: '1d',
     wsConnected: false,
     ws: null,
-    // New states
     selectedIndicators: ['SMA20'],
     backtestResults: null,
     isBacktesting: false,
@@ -20,65 +22,50 @@ export const useMarketStore = defineStore('market', {
     watchlistUS: (state) => state.watchlist.filter(i => i.market === 'US'),
   },
   actions: {
-    
-    async addToWatchlist(symbol, market) {
-      try {
-        await axios.post('/api/watchlist', {
-          symbol: symbol,
-          name: '',
-          ref_price: 0.0,
-          market: market
-        });
-        await this.fetchWatchlist();
-      } catch (error) {
-        console.error('Failed to add to watchlist:', error);
-        throw error;
-      }
+    async addToWatchlist(symbol) {
+      await axios.post('/api/watchlist', { symbol, name: '' });
+      await this.fetchWatchlist();
     },
     async removeFromWatchlist(symbol) {
-      try {
-        await axios.delete(`/api/watchlist/${symbol}`);
-        await this.fetchWatchlist();
-      } catch (error) {
-        console.error('Failed to remove from watchlist:', error);
-        throw error;
-      }
+      await axios.delete(`/api/watchlist/${encodeURIComponent(symbol)}`);
+      await this.fetchWatchlist();
     },
     async fetchWatchlist() {
-      try {
-        const res = await axios.get('/api/portfolio');
-        this.watchlist = res.data.watchlist.map(item => ({
-          ...item,
-          flashClass: ''
-        }));
-        if (!this.currentSymbol && this.watchlist.length > 0) {
-          this.currentSymbol = this.watchlist[0].symbol;
-        }
-      } catch (error) {
-        console.error('Failed to fetch watchlist:', error);
+      // /api/portfolio carries both the watchlist and the portfolio; fetch it once for both stores.
+      const data = await usePortfolioStore().fetchPortfolio();
+      if (!data) return;
+      this.watchlist = data.watchlist.map(item => ({ ...item, flashClass: '' }));
+      if (!this.currentSymbol && this.watchlist.length > 0) {
+        this.currentSymbol = this.watchlist[0].symbol;
       }
     },
     setCurrentSymbol(symbol) {
       this.currentSymbol = symbol;
-      // Clear backtest results when changing symbol to avoid confusion
+      this.clearBacktest();
+    },
+    clearBacktest() {
+      backtestGeneration++;
       this.backtestResults = null;
+      this.backtestEnabled = false;
+      this.isBacktesting = false;
     },
     async runBacktest() {
       if (!this.currentSymbol) return;
+      const request = { symbol: this.currentSymbol, interval: this.currentInterval, strategy: this.selectedStrategy };
+      const generation = ++backtestGeneration;
       this.isBacktesting = true;
       try {
-        const res = await axios.get(`/api/backtest/${this.currentSymbol}`, {
-          params: {
-            strategies: this.selectedStrategy,
-            interval: this.currentInterval
-          }
+        const res = await axios.get(`/api/backtest/${encodeURIComponent(request.symbol)}`, {
+          params: { strategies: request.strategy, interval: request.interval }
         });
-        this.backtestResults = res.data[this.selectedStrategy];
-        this.backtestEnabled = true;
+        // Drop the result if the user switched symbol/interval/strategy while it ran.
+        if (generation !== backtestGeneration) return;
+        this.backtestResults = res.data[request.strategy] || null;
+        this.backtestEnabled = !!this.backtestResults;
       } catch (e) {
-        console.error('Backtest failed:', e);
+        if (generation === backtestGeneration) alert('Backtest failed: ' + (e.response?.data?.detail || e.message));
       } finally {
-        this.isBacktesting = false;
+        if (generation === backtestGeneration) this.isBacktesting = false;
       }
     },
     toggleIndicator(name) {
@@ -89,25 +76,22 @@ export const useMarketStore = defineStore('market', {
     connectWebSocket() {
       if (this.ws) return;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/ws/watchlist`;
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(`${protocol}//${window.location.host}/api/ws/watchlist`);
       this.ws.onopen = () => { this.wsConnected = true; };
       this.ws.onmessage = (event) => {
         const payload = JSON.parse(event.data);
-        if (payload.type === 'updates') {
-          payload.data.forEach(data => {
-            const watchItem = this.watchlist.find(i => i.symbol === data.symbol);
-            if (watchItem) {
-              watchItem.last = data.price;
-              if (watchItem.ref_price && watchItem.ref_price > 0) {
-                const pct = ((data.price - watchItem.ref_price) / watchItem.ref_price) * 100;
-                watchItem.chg_pct = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
-              }
-              watchItem.flashClass = 'flash-green';
-              setTimeout(() => { watchItem.flashClass = ''; }, 500);
-            }
-          });
-        }
+        if (payload.type !== 'updates') return;
+        payload.data.forEach(data => {
+          const item = this.watchlist.find(i => i.symbol === data.symbol);
+          if (!item) return;
+          item.last = data.price;
+          if (item.ref_price > 0) {
+            const pct = ((data.price - item.ref_price) / item.ref_price) * 100;
+            item.chg_pct = (pct > 0 ? '+' : '') + pct.toFixed(2) + '%';
+          }
+          item.flashClass = 'flash-green';
+          setTimeout(() => { item.flashClass = ''; }, 500);
+        });
       };
       this.ws.onclose = () => {
         this.wsConnected = false;

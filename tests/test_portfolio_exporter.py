@@ -117,3 +117,70 @@ def test_portfolio_export_gist(mock_patch):
     assert content["portfolio"][0]["market"] == "US"
     assert content["portfolio"][0]["quantity"] == 5
     assert content["portfolio"][0]["cost_basis"] == 300.0
+
+
+def _worker_state(n, methods=("gist",)):
+    return {"settings": {"portfolio_export": {"methods": list(methods), "gist_id": "g", "github_token": "t"}},
+            "trades": [{"id": i, "symbol": "VTI", "action": "BUY", "shares": 1, "price": 1.0,
+                        "timestamp": f"2026-01-0{i}T00:00", "currency": "USD"} for i in range(1, n + 1)]}
+
+
+def _drain(w, timeout=2.0):
+    import time
+    end = time.time() + timeout
+    while time.time() < end and (w._pending is not None or w.status["state"] == "running"):
+        time.sleep(0.02)
+    time.sleep(0.05)
+
+
+def test_export_worker_drops_older_revision_and_skips_unchanged():
+    import threading
+    from src.services.portfolio_exporter import ExportWorker
+    sent, gate = [], threading.Event()
+
+    def fake_export(state):
+        gate.wait(2)
+        sent.append(len(state["trades"]))
+        return True
+
+    w = ExportWorker(fake_export)
+    w.submit(1, _worker_state(1))
+    import time; time.sleep(0.1)       # revision 1 is in flight
+    w.submit(3, _worker_state(3))
+    w.submit(2, _worker_state(2))      # arrives late with an older revision: dropped
+    gate.set()
+    _drain(w)
+    w.submit(4, _worker_state(3))      # same holdings and targets: not re-sent
+    _drain(w)
+    assert sent == [1, 3]
+    assert w.status["state"] == "ok" and w.status["revision"] == 4
+
+
+def test_export_worker_delivers_to_new_target_and_retries_failures():
+    from src.services.portfolio_exporter import ExportWorker
+    calls = []
+
+    def flaky(state):
+        calls.append(state["settings"]["portfolio_export"]["methods"])
+        return len(calls) != 2          # second delivery fails once
+
+    w = ExportWorker(flaky, retry_base=0.05)
+    w.submit(1, _worker_state(1, methods=()))
+    _drain(w)
+    assert calls == [] and w.status["state"] == "disabled"
+    w.submit(2, _worker_state(1, methods=("gist",)))
+    _drain(w)
+    w.submit(3, _worker_state(1, methods=("local",)))
+    _drain(w, timeout=3)
+    assert calls == [["gist"], ["local"], ["local"]]
+    assert w.status["state"] == "ok"
+
+
+def test_export_worker_hold_blocks_delivery():
+    from src.services.portfolio_exporter import ExportWorker
+    calls = []
+    w = ExportWorker(lambda s: calls.append(1) or True)
+    w.hold("pull failed")
+    w.submit(1, _worker_state(1))
+    _drain(w)
+    assert calls == [] and w.status["state"] == "held"

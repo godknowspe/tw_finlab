@@ -1,6 +1,25 @@
 from src.engine.backtest import Strategy
 
-class RSISignals(Strategy):
+
+class _UnitStrategy(Strategy):
+    """Signals add one unit (one 1000-share lot for TW, `us_unit` shares for US) per buy
+    signal and exit the whole position on a sell signal, as the original strategies did."""
+    us_unit = 10
+
+    @property
+    def unit(self):
+        return self.lot if self.lot > 1 else self.us_unit
+
+    def enter(self, bar):
+        if self.broker.cash > bar['close'] * self.unit:
+            self.buy(self.unit)
+
+    def exit(self):
+        if self.broker.shares > 0:
+            self.sell()
+
+
+class RSISignals(_UnitStrategy):
     name = "RSI"
     def init(self):
         delta = self.data['close'].diff()
@@ -10,12 +29,13 @@ class RSISignals(Strategy):
         self.data['rsi'] = 100 - (100 / (1 + rs))
 
     def on_bar(self, i, bar):
-        if bar['rsi'] < 30 and self.broker.cash > bar['close'] * 1000:
-            self.buy(i, self.data.iloc[i]['stock_id'], 1000)
-        elif bar['rsi'] > 70 and self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
-            self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+        if bar['rsi'] < 30:
+            self.enter(bar)
+        elif bar['rsi'] > 70:
+            self.exit()
 
-class SMACross(Strategy):
+
+class SMACross(_UnitStrategy):
     name = "SMA_Cross"
     def init(self):
         self.data['sma20'] = self.data['close'].rolling(20).mean()
@@ -25,13 +45,12 @@ class SMACross(Strategy):
         if i < 1: return
         prev_bar = self.data.iloc[i-1]
         if prev_bar['sma20'] < prev_bar['sma60'] and bar['sma20'] > bar['sma60']:
-            if self.broker.cash > bar['close'] * 1000:
-                self.buy(i, self.data.iloc[i]['stock_id'], 1000)
+            self.enter(bar)
         elif prev_bar['sma20'] > prev_bar['sma60'] and bar['sma20'] < bar['sma60']:
-            if self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
-                self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+            self.exit()
 
-class MACDStrategy(Strategy):
+
+class MACDStrategy(_UnitStrategy):
     name = "MACD"
     def init(self):
         exp1 = self.data['close'].ewm(span=12, adjust=False).mean()
@@ -44,14 +63,13 @@ class MACDStrategy(Strategy):
         prev_bar = self.data.iloc[i-1]
         # Golden Cross: MACD crosses above Signal
         if prev_bar['macd'] < prev_bar['signal'] and bar['macd'] > bar['signal']:
-            if self.broker.cash > bar['close'] * 1000:
-                self.buy(i, self.data.iloc[i]['stock_id'], 1000)
+            self.enter(bar)
         # Death Cross: MACD crosses below Signal
         elif prev_bar['macd'] > prev_bar['signal'] and bar['macd'] < bar['signal']:
-            if self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
-                self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+            self.exit()
 
-class BollingerBandsStrategy(Strategy):
+
+class BollingerBandsStrategy(_UnitStrategy):
     name = "BollingerBands"
     def init(self):
         mid = self.data['close'].rolling(20).mean()
@@ -60,10 +78,11 @@ class BollingerBandsStrategy(Strategy):
         self.data['bb_low'] = mid - (std * 2)
 
     def on_bar(self, i, bar):
-        if bar['close'] < bar['bb_low'] and self.broker.cash > bar['close'] * 1000:
-            self.buy(i, self.data.iloc[i]['stock_id'], 1000)
-        elif bar['close'] > bar['bb_up'] and self.broker.positions.get(self.data.iloc[i]['stock_id'], 0) > 0:
-            self.sell(i, self.data.iloc[i]['stock_id'], self.broker.positions.get(self.data.iloc[i]['stock_id'], 0))
+        if bar['close'] < bar['bb_low']:
+            self.enter(bar)
+        elif bar['close'] > bar['bb_up']:
+            self.exit()
+
 
 STRATEGIES = {
     "RSI": RSISignals,

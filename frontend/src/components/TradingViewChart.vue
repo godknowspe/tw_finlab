@@ -70,6 +70,25 @@ let pnlSeries = null;
 let backtestLineSeries = null;
 let indicatorSeries = {}; 
 let lastValidData = null;
+let fetchGeneration = 0;
+let resizeObserver = null;
+
+// Bar times from the API: daily+ are 'YYYY-MM-DD'; intraday are exchange wall-clock time sent
+// as if UTC. Trade timestamps are exchange wall-clock too, so compare both as UTC.
+const barStartMs = (t) => typeof t === 'number' ? t * 1000 : Date.parse(t + 'T00:00:00Z');
+const tradeMs = (ts) => Date.parse(ts.length === 16 ? ts + ':00Z' : ts + 'Z');
+
+// The bar containing `ms`: start <= ms < end, using the bar end sent by the API. Trades outside
+// every loaded bar (before the first, after the last, or in a session gap) get no marker.
+const barFor = (data, ms) => {
+  let lo = 0, hi = data.length - 1;
+  if (hi < 0 || ms < barStartMs(data[0].time)) return null;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (barStartMs(data[mid].time) <= ms) lo = mid; else hi = mid - 1;
+  }
+  return ms < data[lo].end * 1000 ? data[lo] : null;
+};
 
 const initChart = () => {
   if (!chartContainer.value) return;
@@ -95,8 +114,16 @@ const initChart = () => {
     leftPriceScale: { borderColor: '#30363d', visible: false },
     handleScroll: true,
     handleScale: true,
-    autoSize: true,
+    width: chartContainer.value.clientWidth,
+    height: chartContainer.value.clientHeight,
   });
+
+  // lightweight-charts 3.x has no autoSize option; follow the container size ourselves.
+  resizeObserver = new ResizeObserver(([entry]) => {
+    const { width, height } = entry.contentRect;
+    if (chart && width > 0 && height > 0) chart.resize(width, height);
+  });
+  resizeObserver.observe(chartContainer.value);
 
   candleSeries = chart.addCandlestickSeries({
     upColor: '#3fb950', downColor: '#f85149', borderVisible: false,
@@ -187,11 +214,17 @@ const clearIndicators = () => {
 
 const fetchData = async () => {
   if (!chart) return;
+  const generation = ++fetchGeneration;
+  const stale = () => generation !== fetchGeneration || !chart;
   if (props.mode === 'symbol' && props.symbol) {
     try {
-      const res = await axios.get(`/api/kbars/${props.symbol}`, { params: { interval: marketStore.currentInterval, t: Date.now() } });
+      const res = await axios.get(`/api/kbars/${encodeURIComponent(props.symbol)}`, { params: { interval: marketStore.currentInterval, t: Date.now() } });
+      if (stale()) return;
       const data = res.data;
-      if (!data || data.length === 0) return;
+      if (!data || data.length === 0) {
+        candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
+        return;
+      }
 
       const candles = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
       const volumes = data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' }));
@@ -229,22 +262,15 @@ const fetchData = async () => {
 
       
       let markers = [];
-      if (marketStore.backtestEnabled && marketStore.backtestResults) {
-        // BACKTEST MODE
-        const btTrades = marketStore.backtestResults.trades;
+      const bt = marketStore.backtestResults;
+      if (marketStore.backtestEnabled && bt && bt.symbol === props.symbol && bt.interval === marketStore.currentInterval) {
+        // BACKTEST MODE (bar times come from the same series, so they match exactly)
         let validBtMarkers = [];
-        btTrades.forEach(t => {
-           const tradeTimeMs = typeof t.time === 'number' ? t.time * 1000 : new Date(t.time).getTime();
-           let closestCandle = null;
-           let minDiff = Infinity;
-           for (const d of data) {
-             const candleTimeMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
-             const diff = Math.abs(candleTimeMs - tradeTimeMs);
-             if (diff < minDiff) { minDiff = diff; closestCandle = d; }
-           }
-           if (closestCandle) {
+        bt.trades.forEach(t => {
+           const candle = barFor(data, barStartMs(t.time));
+           if (candle) {
              validBtMarkers.push({
-               time: closestCandle.time,
+               time: candle.time,
                position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
                color: t.side === 'buy' ? '#3fb950' : '#f85149',
                shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
@@ -255,10 +281,10 @@ const fetchData = async () => {
         markers = validBtMarkers;
 
         
-        if (marketStore.backtestResults.chart_data?.length > 0) {
+        if (bt.chart_data?.length > 0) {
           chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
           backtestLineSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 2, priceScaleId: 'left', title: 'BT Equity', priceLineVisible: false });
-          backtestLineSeries.setData(marketStore.backtestResults.chart_data);
+          backtestLineSeries.setData(bt.chart_data);
         }
       } else {
         
@@ -271,21 +297,7 @@ const fetchData = async () => {
         
         let validMarkers = [];
         actualTrades.forEach(t => {
-           // Find the closest candle for this trade
-           const tradeTimeMs = new Date(t.timestamp).getTime();
-           
-           let closestCandle = null;
-           let minDiff = Infinity;
-           
-           for (const d of data) {
-             const candleTimeMs = typeof d.time === 'number' ? d.time * 1000 : new Date(d.time).getTime();
-             const diff = Math.abs(candleTimeMs - tradeTimeMs);
-             if (diff < minDiff) {
-               minDiff = diff;
-               closestCandle = d;
-             }
-           }
-           
+           const closestCandle = barFor(data, tradeMs(t.timestamp));
            if (closestCandle) {
              const existingMarker = validMarkers.find(m => m.time === closestCandle.time && m.originalAction === t.action);
              if (existingMarker) {
@@ -322,7 +334,7 @@ const fetchData = async () => {
         }
       }
 
-      markers.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      markers.sort((a, b) => barStartMs(a.time) - barStartMs(b.time));
       candleSeries.setMarkers(markers);
 
       if (equityTotalSeries) { chart.removeSeries(equityTotalSeries); equityTotalSeries = null; }
@@ -351,6 +363,7 @@ const fetchData = async () => {
   } else if (props.mode === 'equity') {
     try {
       const res = await axios.get('/api/equity');
+      if (stale()) return;
       const data = res.data;
       candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
       const eqOptions = {
@@ -384,8 +397,12 @@ const fetchData = async () => {
 };
 
 onMounted(() => { initChart(); fetchData(); });
-watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, portfolioStore.trades], () => fetchData(), { deep: true });
-onUnmounted(() => { if (chart) chart.remove(); });
+watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, marketStore.backtestResults, portfolioStore.trades], () => fetchData(), { deep: true });
+onUnmounted(() => {
+  fetchGeneration++;
+  if (resizeObserver) resizeObserver.disconnect();
+  if (chart) { chart.remove(); chart = null; }
+});
 </script>
 
 <template>

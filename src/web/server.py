@@ -1,602 +1,70 @@
-import json
 import os
-import uvicorn
+import tempfile
+
 import yfinance as yf
-import datetime
-import pandas as pd
-import numpy as np
-import asyncio
-import copy
-from typing import List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
 from loguru import logger
 
-# Configure loguru to write to a file as well
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
 logger.add(LOG_FILE, rotation="10 MB", retention="10 days", level="INFO")
 
-# Fix yfinance file descriptor leak
-try:
-    import tempfile
-    yf_cache_dir = os.path.join(tempfile.gettempdir(), "yfinance_cache")
-    if not os.path.exists(yf_cache_dir):
-        os.makedirs(yf_cache_dir, exist_ok=True)
-    yf.set_tz_cache_location(yf_cache_dir)
-except Exception:
-    pass
+# yfinance leaks file descriptors through its sqlite tz cache unless it has a stable location.
+yf_cache_dir = os.path.join(tempfile.gettempdir(), "yfinance_cache")
+os.makedirs(yf_cache_dir, exist_ok=True)
+yf.set_tz_cache_location(yf_cache_dir)
 
-from src.data.models import get_engine, get_session, Base, DailyPrice, AppConfig
-from src.services.config_service import ConfigService
-from src.services.data_service import DataService
-from src.services.indicator_service import IndicatorService
-from src.services.portfolio_service import PortfolioService
-from src.providers.factory import ProviderFactory
+from src.services.portfolio_exporter import ExportWorker
+from src.services.state_store import StateStore
+from src.services.state_sync import GitStateSync
+from src.web import deps
+from src.web.routes_market import router as market_router
+from src.web.routes_portfolio import router as portfolio_router
+
+FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
+
+
+def _build_state() -> StateStore:
+    """Pull the data repo (if configured), load and validate state, and wire the post-save hooks.
+    A corrupt state file raises StateLoadError here and the server refuses to start."""
+    explicit = os.environ.get("TW_FINLAB_STATE_FILE") or None
+    sync = GitStateSync(explicit or StateStore.default_path(), explicit=bool(explicit))
+    exporter = ExportWorker()
+
+    def on_saved(revision, state):
+        sync.schedule_push()
+        exporter.submit(revision, state)
+
+    # The store takes the owner lock first, then runs the pull, then loads.
+    store = StateStore(explicit, on_saved=on_saved, before_load=sync.pull)
+    if not sync.trusted:
+        # The local copy may be older than what another host already published.
+        exporter.hold("state repo pull failed; resolve it and restart before exports resume")
+    deps._status.update(git=lambda: sync.status, export=lambda: exporter.status)
+    if store.is_fresh:
+        # A default state must never replace the remote holdings backup.
+        logger.warning("Skipping startup export: no saved state yet.")
+    else:
+        exporter.submit(0, store.snapshot())
+    return store
+
 
 app = FastAPI(title="TW FinLab Quant Dashboard")
+deps._state = _build_state()
+app.include_router(portfolio_router)
+app.include_router(market_router)
 
-@app.on_event("startup")
-def on_startup():
-    try:
-        logger.info("Server starting up, performing initial portfolio export...")
-        from src.services.portfolio_exporter import trigger_portfolio_export
-        trigger_portfolio_export(app_state)
-    except Exception as e:
-        logger.error(f"Startup portfolio export error: {e}")
-
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_state.json")
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
-
-if os.path.exists(frontend_dist):
-    logger.info(f"Serving modern frontend from {frontend_dist}")
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+if os.path.exists(FRONTEND_DIST):
+    logger.info(f"Serving modern frontend from {FRONTEND_DIST}")
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 else:
-    logger.warning(f"Modern frontend not found at {frontend_dist}, falling back to static.")
+    logger.warning(f"Frontend not built at {FRONTEND_DIST}; run `npm run build` in frontend/ and restart.")
 
-# --- Dependency ---
-def get_db():
-    engine = get_engine()
-    Base.metadata.create_all(engine)
-    db = get_session(engine)
-    try:
-        yield db
-    finally:
-        db.close()
-
-# --- State Management ---
-def load_app_state():
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"LOAD ERROR: {e}")
-    return {
-        "settings": {"take_profit_pct": 10.0, "stop_loss_pct": 5.0},
-        "agent_state": {"target": "2330.TW", "phase": "Accumulation", "exposure": "65%", "halted": False},
-        "watchlist": [
-            {"symbol": "2330", "name": "TSMC", "ref_price": 800.00, "market": "TW"},
-            {"symbol": "2317", "name": "Hon Hai", "ref_price": 120.00, "market": "TW"},
-            {"symbol": "AAPL", "name": "Apple Inc.", "ref_price": 170.00, "market": "US"}
-        ],
-        "cash": {"TWD": 1000000.0, "USD": 50000.0},
-        "trades": []
-    }
-
-def save_app_state(state):
-    tmp_path = STATE_FILE + ".tmp"
-    try:
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(state, f, ensure_ascii=False, indent=4)
-        os.replace(tmp_path, STATE_FILE)
-        
-        # Trigger portfolio export whenever app state changes
-        try:
-            from src.services.portfolio_exporter import trigger_portfolio_export
-            trigger_portfolio_export(state)
-        except Exception as ex:
-            logger.error(f"Failed to export portfolio on save: {ex}")
-            
-    except Exception as e:
-        logger.error(f"SAVE ERROR: {e}")
-
-app_state = load_app_state()
-
-# --- Pydantic Models ---
-class ConfigUpdate(BaseModel):
-    kline: str
-    realtime: str
-    shioaji_api_key: str = ""
-    shioaji_api_secret: str = ""
-    shioaji_person_id: str = ""
-    shioaji_password: str = ""
-
-class SettingsUpdate(BaseModel):
-    take_profit_pct: float
-    stop_loss_pct: float
-
-class WatchlistItem(BaseModel):
-    symbol: str
-    name: str = ""
-    ref_price: float = 0.0
-    market: str = "TW"
-
-class TradeItem(BaseModel):
-    symbol: str
-    action: str
-    shares: int
-    price: float
-    timestamp: str
-    currency: str = "TWD"
-
-class ActionRequest(BaseModel):
-    action: str
-
-# --- Routes ---
 
 @app.get("/")
-async def root(request: Request):
-    if os.path.exists(os.path.join(frontend_dist, "index.html")):
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
-    user_agent = request.headers.get("user-agent", "").lower()
-    is_mobile = any(mobile_os in user_agent for mobile_os in ["android", "iphone", "ipad", "mobile"])
-    if is_mobile and os.path.exists(os.path.join(static_dir, "mobile.html")):
-        return FileResponse(os.path.join(static_dir, "mobile.html"))
-    return FileResponse(os.path.join(static_dir, "index.html"))
-
-@app.get("/api/config")
-def get_config(db: Session = Depends(get_db)):
-    config_service = ConfigService(db)
-    all_configs = config_service.get_all_configs()
-    return {k.replace("ds_", ""): v for k, v in all_configs.items() if k.startswith("ds_")}
-
-@app.post("/api/config")
-def update_config(config: ConfigUpdate, db: Session = Depends(get_db)):
-    config_service = ConfigService(db)
-    data = config.dict()
-    for k, v in data.items():
-        config_service.set_config(f"ds_{k}", v)
-    return {"status": "success", "message": "Configuration updated in database."}
-
-@app.get("/api/kbars/{stock_id}")
-def get_kbars(stock_id: str, interval: str = "1d", db: Session = Depends(get_db)):
-    data_service = DataService(db)
-    config_service = ConfigService(db)
-    
-    df = data_service.get_stock_data_df(stock_id, interval=interval)
-    
-    now = datetime.datetime.now()
-    need_fetch = False
-    is_min_inv = interval in ['15m', '30m', '60m', '1h']
-    
-    if df.empty:
-        need_fetch = True
-    else:
-        if is_min_inv and len(df) < 500:
-            need_fetch = True
-        elif not is_min_inv and len(df) < 100:
-            need_fetch = True
-        else:
-            last_date = df.index[-1]
-            diff_days = (now - last_date).days
-            if interval == '1d' and diff_days >= 1: need_fetch = True
-            elif interval in ['1w', '1wk'] and diff_days >= 7: need_fetch = True
-            elif interval in ['1m', '1mo'] and diff_days >= 30: need_fetch = True
-            elif is_min_inv and (now - last_date).total_seconds() > 3600: need_fetch = True
-
-    if need_fetch:
-        source = config_service.get_config("ds_kline", "yfinance")
-        creds = {
-            "api_key": config_service.get_config("ds_shioaji_api_key", ""),
-            "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
-        }
-        try:
-            provider = ProviderFactory.get_provider(source, **creds)
-            if interval == '1d':
-                start_date = (datetime.date.today() - datetime.timedelta(days=365*10)).strftime('%Y-%m-%d')
-            elif interval in ['1w', '1wk', '1m', '1mo']:
-                start_date = (datetime.date.today() - datetime.timedelta(days=365*20)).strftime('%Y-%m-%d')
-            else:
-                start_date = (datetime.date.today() - datetime.timedelta(days=60)).strftime('%Y-%m-%d')
-                
-            end_date = (datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-            new_df = provider.fetch_kbars(stock_id, start_date, end_date, interval)
-            
-            if not new_df.empty:
-                data_service.save_stock_data(new_df, stock_id, interval)
-                df = data_service.get_stock_data_df(stock_id, interval=interval)
-        except Exception as e:
-            logger.error(f"Fetch Error: {e}")
-            if source != "yfinance":
-                try:
-                    provider = ProviderFactory.get_provider("yfinance")
-                    new_df = provider.fetch_kbars(stock_id, start_date, end_date, interval)
-                    if not new_df.empty:
-                        data_service.save_stock_data(new_df, stock_id, interval)
-                        df = data_service.get_stock_data_df(stock_id, interval=interval)
-                except: pass
-
-    if df.empty: return []
-
-    df = IndicatorService.add_all_indicators(df)
-    
-    # --- PnL Calculation ---
-    sym_trades = sorted([t for t in app_state["trades"] if t["symbol"] == stock_id], key=lambda x: x["timestamp"])
-    trade_idx, shares, avg_cost, realized_pnl = 0, 0, 0.0, 0.0
-    
-    result = []
-    is_minute_interval = interval in ['15m', '30m', '60m', '1h']
-
-    for index, row in df.iterrows():
-        current_date_str = index.strftime('%Y-%m-%d')
-        while trade_idx < len(sym_trades) and sym_trades[trade_idx]["timestamp"][:10] <= current_date_str:
-            t = sym_trades[trade_idx]
-            t_price, t_shares = float(t["price"]), int(t["shares"])
-            if t["action"] == "BUY":
-                avg_cost = ((shares * avg_cost) + (t_shares * t_price)) / (shares + t_shares)
-                shares += t_shares
-            elif t["action"] == "SELL":
-                sell_shares = min(t_shares, shares)
-                realized_pnl += (t_price - avg_cost) * sell_shares
-                shares -= sell_shares
-                if shares == 0: avg_cost = 0.0
-            trade_idx += 1
-            
-        close_price = float(row['close'])
-        unrealized_pnl = (close_price - avg_cost) * shares if shares > 0 else 0.0
-        total_pnl = realized_pnl + unrealized_pnl if (shares > 0 or realized_pnl != 0) else None
-        pnl_pct = ((close_price - avg_cost) / avg_cost * 100) if (shares > 0 and avg_cost > 0) else None
-
-        def f(val):
-            return float(val) if not (pd.isna(val) or np.isinf(val)) else None
-
-        result.append({
-            "time": int(index.timestamp()) if is_minute_interval else index.strftime('%Y-%m-%d'),
-            "open": f(row['open']), "high": f(row['high']), "low": f(row['low']), "close": f(row['close']),
-            "value": f(row['volume']),
-            "sma5": f(row.get('sma5')), "sma10": f(row.get('sma10')), "sma20": f(row.get('sma20')),
-            "macd": f(row.get('macd')), "signal": f(row.get('signal')), "histogram": f(row.get('histogram')),
-            "rsi": f(row.get('rsi')), "bb_up": f(row.get('bb_up')), "bb_mid": f(row.get('bb_mid')), "bb_low": f(row.get('bb_low')),
-            "k": f(row.get('k')), "d": f(row.get('d')),
-            "total_pnl": f(total_pnl), "pnl_pct": f(pnl_pct)
-        })
-    return result
-
-@app.get("/api/portfolio")
-def get_portfolio(db: Session = Depends(get_db)):
-    config_service = ConfigService(db)
-    
-    # 判斷是否啟用 Shioaji 同步台股持倉
-    realtime_source = config_service.get_config("ds_realtime", "yfinance")
-    shioaji_api = None
-    if realtime_source == "Shioaji":
-        creds = {
-            "api_key": config_service.get_config("ds_shioaji_api_key", ""),
-            "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
-        }
-        try:
-            shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
-        except Exception as e:
-            logger.error(f"Failed to initialize Shioaji for position sync: {e}")
-
-    portfolio_service = PortfolioService(
-        app_state["cash"]["TWD"], 
-        app_state["cash"]["USD"],
-        shioaji_api=shioaji_api
-    )
-    port_data = portfolio_service.calculate_positions(app_state["trades"])
-    symbols = list(port_data["positions"].keys()) + [w["symbol"] for w in app_state["watchlist"]]
-    latest_prices = {}
-    prev_prices = {}
-    if symbols:
-        # 1. 優先使用 Shioaji 獲取台股的即時報價與精準「昨日收盤參考價」
-        tw_syms = [s for s in set(symbols) if s.isdigit()]
-        if shioaji_api and tw_syms:
-            try:
-                contracts = []
-                for s in tw_syms:
-                    contract = shioaji_api.Contracts.Stocks.get(s)
-                    if contract: contracts.append(contract)
-                
-                if contracts:
-                    snapshots = shioaji_api.snapshots(contracts)
-                    for idx, snap in enumerate(snapshots):
-                        s = contracts[idx].code
-                        if snap and snap.close > 0:
-                            latest_prices[s] = float(snap.close)
-                        if hasattr(contracts[idx], 'reference') and contracts[idx].reference:
-                            prev_prices[s] = float(contracts[idx].reference)
-            except Exception as e:
-                logger.error(f"Shioaji portfolio sync error: {e}")
-                
-        # 2. 其他（美股、指數）或沒有 Shioaji 的台股，使用 yfinance fast_info 以獲得精確的前日收盤價
-        yf_syms = [s for s in set(symbols) if s not in latest_prices]
-        if yf_syms:
-            for s in yf_syms:
-                yf_s = f"{s}.TW" if s.isdigit() else s
-                try:
-                    t = yf.Ticker(yf_s)
-                    fast_info = t.fast_info
-                    if "lastPrice" in fast_info:
-                        latest_prices[s] = float(fast_info["lastPrice"])
-                    if "previousClose" in fast_info:
-                        prev_prices[s] = float(fast_info["previousClose"])
-                except Exception as e:
-                    pass
-    enriched = portfolio_service.enrich_portfolio(port_data, latest_prices)
-    enriched_watchlist = []
-    for item in app_state["watchlist"]:
-        sym = item["symbol"]
-        last = latest_prices.get(sym, item.get("ref_price", 0))
-        last = float(last) if not (pd.isna(last) or np.isinf(last)) else 0.0
-        
-        # 使用抓取到的昨日收盤價計算漲跌幅
-        prev = prev_prices.get(sym, last)
-        
-        chg_pct = (last - prev) / prev * 100 if prev != 0 else 0
-        enriched_watchlist.append({
-            "symbol": sym, "name": item.get("name", sym), "ref_price": prev,
-            "market": item.get("market", "TW"), "last": round(last, 2),
-            "chg_pct": f"{'+' if chg_pct > 0 else ''}{chg_pct:.2f}%"
-        })
-    return {
-        "watchlist": enriched_watchlist, "positions": enriched["positions"],
-        "summary": { **enriched["summary"], "cash_twd": port_data["cash"]["TWD"], "cash_usd": port_data["cash"]["USD"] },
-        "trades": sorted(app_state["trades"], key=lambda x: x["timestamp"], reverse=True),
-        "settings": app_state["settings"], "agent_state": app_state["agent_state"]
-    }
-
-@app.post("/api/watchlist")
-def add_watchlist(item: WatchlistItem):
-    if not any(w["symbol"] == item.symbol for w in app_state["watchlist"]):
-        app_state["watchlist"].append(item.dict())
-        save_app_state(app_state)
-    return {"status": "success"}
-
-@app.delete("/api/watchlist/{symbol}")
-def del_watchlist(symbol: str):
-    app_state["watchlist"] = [w for w in app_state["watchlist"] if w["symbol"] != symbol]
-    save_app_state(app_state)
-    return {"status": "success"}
-
-@app.post("/api/trades")
-def add_trade(item: TradeItem):
-    new_id = max([t["id"] for t in app_state["trades"]] + [0]) + 1
-    trade = item.dict()
-    trade["id"] = new_id
-    app_state["trades"].append(trade)
-    save_app_state(app_state)
-    return {"status": "success"}
-
-@app.delete("/api/trades/{trade_id}")
-def del_trade(trade_id: str): # 改為 str 因為 Shioaji ID 是字串
-    app_state["trades"] = [t for t in app_state["trades"] if str(t["id"]) != str(trade_id)]
-    save_app_state(app_state)
-    return {"status": "success"}
-
-@app.post("/api/sync/trades")
-def sync_trades(db: Session = Depends(get_db)):
-    config_service = ConfigService(db)
-    source = config_service.get_config("ds_realtime", "yfinance")
-    
-    if source != "Shioaji":
-        return {"status": "error", "message": "Only Shioaji source supports trade sync."}
-    
-    creds = {
-        "api_key": config_service.get_config("ds_shioaji_api_key", ""),
-        "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
-    }
-    
-    try:
-        from src.api.shioaji_api import fetch_shioaji_trades
-        shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
-        new_trades = fetch_shioaji_trades(shioaji_api)
-        
-        # 取得現有的 ID 列表避免重複
-        existing_ids = {str(t["id"]) for t in app_state["trades"]}
-        added_count = 0
-        
-        for nt in new_trades:
-            if str(nt["id"]) not in existing_ids:
-                app_state["trades"].append(nt)
-                added_count += 1
-        
-        if added_count > 0:
-            save_app_state(app_state)
-            
-        return {"status": "success", "message": f"Synced {added_count} new trades from Shioaji."}
-    except Exception as e:
-        logger.error(f"Sync error: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-from src.engine.backtest import BacktestEngine
-from src.engine.strategies import STRATEGIES
-from src.web.analysis import calculate_trade_analysis
-import random
-
-@app.get("/api/backtest/{symbol}")
-def run_backtest(symbol: str, strategies: str = "RSI", interval: str = "1d", db: Session = Depends(get_db)):
-    data_service = DataService(db)
-    
-    # 取得歷史資料
-    df = data_service.get_stock_data_df(symbol, interval=interval)
-    
-    if df.empty:
-        return {"error": "No data available for backtest"}
-        
-    df['stock_id'] = symbol
-    selected_strategies = strategies.split(",")
-    results_map = {}
-
-    for s_name in selected_strategies:
-        if s_name in STRATEGIES:
-            engine = BacktestEngine(df)
-            res = engine.run(STRATEGIES[s_name])
-            
-            is_minute_interval = interval in ['15m', '30m', '60m', '1h']
-            
-            equity_curve = res['equity_curve'].copy()
-            chart_data = []
-            for _, row in equity_curve.iterrows():
-                ts = row['date']
-                if is_minute_interval:
-                    chart_time = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(pd.to_datetime(ts).timestamp())
-                else:
-                    chart_time = ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
-                
-                chart_data.append({
-                    "time": chart_time,
-                    "value": round(row['total_equity'], 2)
-                })
-            
-            trade_markers = []
-            for t in res.get('trades', []):
-                ts = t['date']
-                if is_minute_interval:
-                    chart_time = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(pd.to_datetime(ts).timestamp())
-                else:
-                    chart_time = ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
-                    
-                trade_markers.append({
-                    "time": chart_time,
-                    "side": t['side'],
-                    "price": t['price'],
-                    "size": t['size']
-                })
-
-            results_map[s_name] = {
-                "total_return_pct": round(res['total_return'] * 100, 2),
-                "max_drawdown_pct": round(res['max_drawdown'] * 100, 2),
-                "final_equity": int(res['final_equity']),
-                "chart_data": chart_data,
-                "trades": trade_markers
-            }
-        
-    return results_map
-
-@app.get("/api/equity")
-def get_equity():
-    from src.web.analysis import calculate_historical_equity
-    trades = app_state.get("trades", [])
-    cash_twd = app_state["cash"].get("TWD", 1000000)
-    cash_usd = app_state["cash"].get("USD", 50000)
-    
-    # 預設匯率 32.5
-    usd_twd_rate = app_state["settings"].get("usd_twd_rate", 32.5)
-    
-    try:
-        equity_data = calculate_historical_equity(trades, cash_twd, cash_usd, usd_twd_rate)
-        return equity_data
-    except Exception as e:
-        logger.error(f"Equity calculation error: {e}")
-        return {"tw": [], "us": [], "total": []}
-
-@app.get("/api/analysis")
-def get_trade_analysis():
-    results = calculate_trade_analysis(app_state["trades"])
-    return results
-
-@app.websocket("/api/ws/watchlist")
-async def websocket_watchlist(websocket: WebSocket, db: Session = Depends(get_db)):
-    await websocket.accept()
-    last_prices = {}
-    config_service = ConfigService(db)
-    
-    # 決定數據源
-    realtime_source = config_service.get_config("ds_realtime", "yfinance")
-    shioaji_api = None
-    
-    if realtime_source == "Shioaji":
-        creds = {
-            "api_key": config_service.get_config("ds_shioaji_api_key", ""),
-            "api_secret": config_service.get_config("ds_shioaji_api_secret", "")
-        }
-        try:
-            shioaji_api = ProviderFactory.get_provider("shioaji", **creds).api
-        except Exception as e:
-            logger.error(f"WS Shioaji API Error: {e}")
-
-    import time
-    last_yf_fetch_time = 0
-    
-    try:
-        while True:
-            symbols = [w["symbol"] for w in app_state["watchlist"]]
-            updates = []
-            
-            if symbols:
-                if shioaji_api:
-                    # 使用 Shioaji Snapshots 抓取台股即時報價
-                    tw_syms = [s for s in symbols if s.isdigit()]
-                    if tw_syms:
-                        try:
-                            from src.api.shioaji_api import fetch_shioaji_quote
-                            contracts = []
-                            valid_syms = []
-                            for s in tw_syms:
-                                contract = shioaji_api.Contracts.Stocks.get(s)
-                                if contract:
-                                    contracts.append(contract)
-                                    valid_syms.append(s)
-                            
-                            if contracts:
-                                snapshots = await asyncio.to_thread(shioaji_api.snapshots, contracts)
-                                for idx, snap in enumerate(snapshots):
-                                    if snap and snap.close > 0:
-                                        s = valid_syms[idx]
-                                        price = float(snap.close)
-                                        if price != last_prices.get(s):
-                                            last_prices[s] = price
-                                            updates.append({"symbol": s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
-                        except Exception as e:
-                            logger.error(f"Shioaji WS fetch error: {e}")
-                
-                # 美股或其他還是使用 yfinance
-                us_syms = [s for s in symbols if not s.isdigit()]
-                # 如果沒有 shioaji，台股也用 yf 抓
-                if not shioaji_api:
-                    us_syms.extend([f"{s}.TW" for s in symbols if s.isdigit()])
-                
-                # 美股限制為每 60 秒才抓取一次，避免 yfinance 頻繁啟動執行緒導致 File Descriptor 耗盡 (OS Errno 24)
-                current_time = time.time()
-                if us_syms and (current_time - last_yf_fetch_time > 60):
-                    last_yf_fetch_time = current_time
-                    try:
-                        # 加上 5 秒 Timeout
-                        data = await asyncio.wait_for(
-                            asyncio.to_thread(yf.download, us_syms, period="5d", progress=False),
-                            timeout=5.0
-                        )
-                        if not data.empty:
-                            for s in symbols:
-                                is_tw = s.isdigit()
-                                if is_tw and shioaji_api: continue # 已經用 shioaji 抓了
-                                
-                                yf_s = f"{s}.TW" if is_tw else s
-                                try:
-                                    v = data['Close'][yf_s].dropna() if len(us_syms) > 1 else data['Close'].dropna()
-                                    if not v.empty:
-                                        price = float(v.iloc[-1])
-                                        actual_s = s
-                                        if price != last_prices.get(actual_s):
-                                            last_prices[actual_s] = price
-                                            updates.append({"symbol": actual_s, "price": round(price, 2), "time": datetime.datetime.now().strftime('%H:%M:%S')})
-                                except: pass
-                    except asyncio.TimeoutError:
-                        logger.warning(f"YF WS fetch TIMEOUT (>3s), skipping this tick to avoid thread lock.")
-                    except Exception as e:
-                        logger.error(f"YF WS fetch error: {e}")
-
-            if updates:
-                await websocket.send_json({"type": "updates", "data": updates})
-            await asyncio.sleep(5) # 每 5 秒更新一次
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
-    except Exception as e:
-        logger.error(f"WebSocket Error: {e}")
-
+async def root():
+    index = os.path.join(FRONTEND_DIST, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
+    return PlainTextResponse("Frontend not built: cd frontend && npm install && npm run build, then restart.", status_code=503)

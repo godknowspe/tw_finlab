@@ -1,8 +1,7 @@
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue';
+import { ref } from 'vue';
 import { useMarketStore } from '@/stores/market';
-import { usePortfolioStore } from '@/stores/portfolio';
-import Sortable from 'sortablejs';
+import { usePortfolioStore, apiError } from '@/stores/portfolio';
 import { Plus, X, TrendingUp, Briefcase, History, RefreshCw, Trash2 } from 'lucide-vue-next';
 
 const marketStore = useMarketStore();
@@ -18,7 +17,7 @@ const syncTrades = async () => {
     const res = await portfolioStore.syncTrades();
     alert(res.message);
   } catch (e) {
-    alert("Sync failed: " + (e.response?.data?.message || e.message));
+    alert("Sync failed: " + apiError(e));
   } finally {
     isSyncing.value = false;
   }
@@ -27,16 +26,16 @@ const syncTrades = async () => {
 
 
 const showWatchlistModal = ref(false);
-const newSymbol = ref({ symbol: '', market: 'TW' });
+const newSymbol = ref({ symbol: '' });
 
 const submitWatchlist = async () => {
   if (!newSymbol.value.symbol) return alert("請輸入股票代號");
   try {
-    await marketStore.addToWatchlist(newSymbol.value.symbol.toUpperCase(), newSymbol.value.market);
+    await marketStore.addToWatchlist(newSymbol.value.symbol.trim().toUpperCase());
     showWatchlistModal.value = false;
     newSymbol.value.symbol = '';
   } catch (e) {
-    alert("新增失敗");
+    alert("新增失敗: " + apiError(e));
   }
 };
 
@@ -46,49 +45,37 @@ const deleteWatchlist = async (symbol) => {
   }
 };
 
+// datetime-local wants local wall-clock time; toISOString() would give UTC (8 hours behind in Taipei).
+const localNow = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const blankTrade = () => ({ symbol: '', action: 'BUY', shares: 1000, price: 0, fee: 0, tax: 0, timestamp: localNow() });
+
 const showAddModal = ref(false);
-const newTrade = ref({
-  symbol: '',
-  action: 'BUY',
-  shares: 1000,
-  price: 0,
-  currency: 'TWD',
-  timestamp: new Date().toISOString().slice(0, 16)
-});
+const newTrade = ref(blankTrade());
+const openAddModal = () => { newTrade.value = blankTrade(); showAddModal.value = true; };
 
 const submitTrade = async () => {
   if (!newTrade.value.symbol || newTrade.value.shares <= 0 || newTrade.value.price <= 0) {
     return alert("請填寫完整的交易資訊");
   }
   try {
-    await portfolioStore.addTrade(newTrade.value);
+    await portfolioStore.addTrade({ ...newTrade.value, symbol: newTrade.value.symbol.trim().toUpperCase() });
     showAddModal.value = false;
-    newTrade.value = {
-      symbol: '', action: 'BUY', shares: 1000, price: 0, currency: 'TWD', timestamp: new Date().toISOString().slice(0, 16)
-    };
   } catch (e) {
-    alert("新增失敗");
+    alert("新增失敗: " + apiError(e));
   }
 };
-
-const sortableTW = ref(null);
-const sortableUS = ref(null);
-
 
 const deleteTrade = async (id) => {
-  if (confirm("確定要刪除這筆交易紀錄嗎？")) {
+  if (!confirm("確定要刪除這筆交易紀錄嗎？")) return;
+  try {
     await portfolioStore.deleteTrade(id);
+  } catch (e) {
+    alert("刪除失敗: " + apiError(e));
   }
 };
-
-const initSortable = () => {
-  const options = { animation: 150, delay: 200, delayOnTouchOnly: true };
-  if (sortableTW.value && !sortableTW.value._sortable) sortableTW.value._sortable = new Sortable(sortableTW.value, options);
-  if (sortableUS.value && !sortableUS.value._sortable) sortableUS.value._sortable = new Sortable(sortableUS.value, options);
-};
-
-onMounted(() => initSortable());
-watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTick(initSortable); });
 </script>
 
 <template>
@@ -112,7 +99,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
         <div v-if="marketStore.watchlistTW.length" class="text-[9px] text-gray-600 font-bold px-4 py-1.5 bg-black/10 uppercase tracking-widest">TW Market</div>
-        <div ref="sortableTW">
+        <div>
           <div v-for="item in marketStore.watchlistTW" :key="item.symbol" 
                @click="marketStore.setCurrentSymbol(item.symbol)"
                               :class="[marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent', item.flashClass]"
@@ -123,7 +110,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <div class="text-right">
-                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
+                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) ?? '--' }}</div>
                  <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
               </div>
               <button @click.stop="deleteWatchlist(item.symbol)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Remove">
@@ -134,7 +121,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         </div>
 
         <div v-if="marketStore.watchlistUS.length" class="text-[9px] text-gray-600 font-bold px-4 py-1.5 bg-black/10 uppercase tracking-widest mt-4">US Market</div>
-        <div ref="sortableUS">
+        <div>
           <div v-for="item in marketStore.watchlistUS" :key="item.symbol" 
                @click="marketStore.setCurrentSymbol(item.symbol)"
                               :class="[marketStore.currentSymbol === item.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent', item.flashClass]"
@@ -145,7 +132,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <div class="text-right">
-                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) }}</div>
+                 <div class="font-mono text-sm text-white">{{ item.last?.toFixed(2) ?? '--' }}</div>
                  <div class="text-[10px] font-mono" :class="item.chg_pct?.startsWith('+') ? 'text-text-green' : 'text-text-red'">{{ item.chg_pct }}</div>
               </div>
               <button @click.stop="deleteWatchlist(item.symbol)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Remove">
@@ -180,7 +167,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
               {{ pos.unrealized > 0 ? '+' : '' }}{{ pos.unrealized.toLocaleString() }}
             </div>
             <div class="text-[9px] font-mono opacity-50" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">
-               {{ ((pos.unrealized / (Math.max(1, pos.shares * pos.avg_cost))) * 100).toFixed(2) }}%
+               {{ pos.unrealized_pct.toFixed(2) }}%{{ pos.price_estimated ? ' (est.)' : '' }}
             </div>
           </div>
         </div>
@@ -193,7 +180,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <span>ACTION / SYM</span>
         <div class="flex items-center gap-2">
           <RefreshCw :size="12" class="text-blue-400 cursor-pointer" :class="isSyncing ? 'animate-spin' : ''" @click="syncTrades" />
-          <Plus @click="showAddModal = true" :size="12" class="text-gray-500 hover:text-white cursor-pointer" />
+          <Plus @click="openAddModal" :size="12" class="text-gray-500 hover:text-white cursor-pointer" />
         </div>
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
@@ -234,13 +221,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
             <input v-model="newSymbol.symbol" @keyup.enter="submitWatchlist" type="text" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500 uppercase" placeholder="e.g. 2330 或 AAPL">
           </div>
           
-          <div class="flex flex-col gap-1">
-            <label>市場 (Market)</label>
-            <select v-model="newSymbol.market" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
-              <option value="TW">台股 (TW Market)</option>
-              <option value="US">美股 (US Market)</option>
-            </select>
-          </div>
+          <div class="text-[10px] text-gray-500">市場由代號判斷：數字代號為台股，其餘為美股。</div>
         </div>
 
         <div class="mt-2 flex justify-end gap-2">
@@ -261,7 +242,7 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
         <div class="flex flex-col gap-3 text-xs text-gray-300">
           <div class="flex flex-col gap-1">
             <label>股票代號 (Symbol)</label>
-            <input v-model="newTrade.symbol" type="text" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500 uppercase" placeholder="e.g. 2330.TW or AAPL">
+            <input v-model="newTrade.symbol" type="text" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500 uppercase" placeholder="e.g. 2330 or AAPL">
           </div>
           
           <div class="flex gap-2">
@@ -272,12 +253,8 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
                 <option value="SELL">SELL</option>
               </select>
             </div>
-            <div class="flex flex-col gap-1 flex-1">
-              <label>幣別 (Currency)</label>
-              <select v-model="newTrade.currency" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
-                <option value="TWD">TWD</option>
-                <option value="USD">USD</option>
-              </select>
+            <div class="flex flex-col gap-1 flex-1 justify-end text-[10px] text-gray-500 pb-1.5">
+              幣別依代號：台股 TWD／美股 USD
             </div>
           </div>
 
@@ -292,8 +269,19 @@ watch(() => activeTab.value, () => { if(activeTab.value === 'watchlist') nextTic
             </div>
           </div>
 
+          <div class="flex gap-2">
+            <div class="flex flex-col gap-1 flex-1">
+              <label>手續費 (Fee)</label>
+              <input v-model.number="newTrade.fee" type="number" step="1" min="0" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+            </div>
+            <div class="flex flex-col gap-1 flex-1">
+              <label>交易稅 (Tax)</label>
+              <input v-model.number="newTrade.tax" type="number" step="1" min="0" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
+            </div>
+          </div>
+
           <div class="flex flex-col gap-1">
-            <label>時間 (Time)</label>
+            <label>時間 (Time，交易所當地時間)</label>
             <input v-model="newTrade.timestamp" type="datetime-local" class="bg-black border border-gray-700 rounded px-2 py-1.5 outline-none focus:border-blue-500">
           </div>
         </div>

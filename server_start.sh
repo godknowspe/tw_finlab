@@ -1,8 +1,21 @@
 #!/bin/bash
-# Kill any existing process on port 8000
-kill -9 $(lsof -t -i:8000) 2>/dev/null
+cd "$(dirname "$0")"
+
+# Load PORTFOLIO_EXPORT_*, TW_FINLAB_STATE_FILE, TW_FINLAB_HOST, ... from the git-ignored .env
+if [ -f .env ]; then
+    set -a; . ./.env; set +a
+fi
+
+# The API has no authentication: bind to loopback unless TW_FINLAB_HOST says otherwise.
+HOST=${TW_FINLAB_HOST:-127.0.0.1}
+PORT=${TW_FINLAB_PORT:-8000}
+
+PYTHON=./.venv/bin/python
+[ -x "$PYTHON" ] || PYTHON=python3
+
+kill $(lsof -t -i:"$PORT") 2>/dev/null
 sleep 1
 
-# Start the server with nohup and log to nohup_uvicorn.log
-nohup /Users/godknows/.pyenv/versions/3.11.9/bin/python -m uvicorn src.web.server:app --port 8000 --host 0.0.0.0 --reload > nohup_uvicorn.log 2>&1 &
-echo "Server started with nohup. Logs are written to nohup_uvicorn.log"
+# No --reload: every reload re-runs the startup export. Pass --reload yourself when developing.
+nohup "$PYTHON" -m uvicorn src.web.server:app --port "$PORT" --host "$HOST" "$@" > nohup_uvicorn.log 2>&1 &
+echo "Server started on http://$HOST:$PORT (logs: nohup_uvicorn.log)"
