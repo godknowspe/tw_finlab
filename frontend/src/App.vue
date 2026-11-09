@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import MarketSidebar from './components/MarketSidebar.vue';
 import TradingViewChart from './components/TradingViewChart.vue';
 import ControlPanel from './components/ControlPanel.vue';
 import AnalysisView from './components/AnalysisView.vue';
 import { useMarketStore } from './stores/market';
+import { usePortfolioStore } from './stores/portfolio';
 import { Layout } from 'lucide-vue-next';
 
 const marketStore = useMarketStore();
@@ -15,10 +16,19 @@ const showRightPanel = ref(true);
 // A backtest result belongs to one (symbol, interval, strategy); drop it when any of them change.
 watch(() => [marketStore.currentInterval, marketStore.selectedStrategy], () => marketStore.clearBacktest());
 
+// Pick up trades saved on another host (synced through git) without a manual reload.
+const portfolioStore = usePortfolioStore();
+let revisionTimer = null;
+const pollRevision = async () => {
+  if (await portfolioStore.pollRevision()) marketStore.fetchWatchlist();
+};
+
 onMounted(() => {
   marketStore.fetchWatchlist();
   marketStore.connectWebSocket();
+  revisionTimer = setInterval(pollRevision, 30000);
 });
+onUnmounted(() => clearInterval(revisionTimer));
 </script>
 
 <template>

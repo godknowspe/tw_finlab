@@ -5,7 +5,7 @@
 
 - 後端：FastAPI、SQLite（行情快取）、pandas、yfinance（預設行情來源，可選 FinMind / Shioaji）
 - 前端：Vue 3 + Vite + Pinia + Tailwind + lightweight-charts（`frontend/`）
-- 帳本：`app_state.json`，放在另一個私有 repo，跨主機以 git 同步；本 repo 不含任何個人資料
+- 帳本：`app_state.json`，放在另一個私有 repo；多台主機可同時開著，server 自動以 git 同步並合併；本 repo 不含任何個人資料
 
 ## 功能
 

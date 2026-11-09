@@ -49,8 +49,9 @@ def test_add_trade_validates_and_persists(client):
 
 def test_delete_trade_that_would_strand_a_sell_is_rejected(client):
     client.post("/api/trades", json={"symbol": "0050", "action": "SELL", "shares": 1000, "price": 120, "timestamp": "2026-06-03T10:00"})
-    assert client.delete("/api/trades/1").status_code == 422
-    assert client.delete("/api/trades/999").status_code == 404
+    uid = json.loads(client.state_path.read_text())["trades"][0]["uid"]
+    assert client.delete(f"/api/trades/{uid}").status_code == 422
+    assert client.delete("/api/trades/not-a-uid").status_code == 404
 
 
 def test_config_never_returns_secrets(client):
@@ -80,3 +81,35 @@ def test_kbars_reports_bar_end(client, monkeypatch):
     bars = client.get("/api/kbars/0050?interval=1d").json()
     assert bars[0]["time"] == "2026-06-01" and bars[0]["end"] == int(pd.Timestamp("2026-06-02", tz="UTC").timestamp())
     assert bars[-1]["total_pnl"] == 10_000
+
+
+def test_new_trades_get_a_uid_and_portfolio_version_matches_its_data(client):
+    v1 = client.get("/api/portfolio").json()["revision"]
+    client.post("/api/trades", json={"symbol": "VTI", "action": "BUY", "shares": 1, "price": 100, "timestamp": "2026-06-02T10:00"})
+    d = client.get("/api/portfolio").json()
+    assert d["revision"] != v1 and client.get("/api/revision").json()["revision"] == d["revision"]
+    assert all(len(t["uid"]) == 36 for t in d["trades"])
+
+
+@pytest.mark.parametrize("env, expected", [
+    ({"TW_FINLAB_EXPORT": "0"}, "off"),          # explicit non-publisher stays off even without git
+    ({}, "off"),                                 # explicit state path but no role: not a publisher
+    ({"TW_FINLAB_EXPORT": "1"}, None),           # publisher: not "off"
+])
+def test_publisher_role_is_configuration_not_inferred(tmp_path, monkeypatch, env, expected):
+    import sys
+    state = tmp_path / "app_state.json"          # not in a git repo: git discovery "fails"
+    state.write_text(json.dumps({"trades": [], "watchlist": [], "cash": {"TWD": 0, "USD": 0}}))
+    monkeypatch.setenv("TW_FINLAB_STATE_FILE", str(state))
+    monkeypatch.setenv("TW_FINLAB_DB_URL", f"sqlite:///{tmp_path / 'db.sqlite'}")
+    monkeypatch.delenv("TW_FINLAB_EXPORT", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    if "src.web.server" in sys.modules:
+        sys.modules["src.web.server"].deps._state.close()
+        server = importlib.reload(sys.modules["src.web.server"])
+    else:
+        import src.web.server as server
+    status = server.deps.sync_status()["export"]["state"]
+    server.deps._state.close()
+    assert (status == "off") if expected == "off" else (status != "off")

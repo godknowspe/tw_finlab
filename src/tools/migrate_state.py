@@ -9,6 +9,9 @@ What it changes, and reports:
   source_trade_id with source='Shioaji'
 - symbols are canonicalised (2330.TW -> 2330); watchlist duplicates that collapse are merged
 - timestamps are normalised ('2026-05-03 10:23:45.123' -> '2026-05-03T10:23:45')
+- every trade gets a persisted `uid` (pre-uid trades get the deterministic legacy uid). Run this
+  once on the shared ledger and push it before running several hosts: until a uid is written,
+  editing a trade's fields on two hosts would derive two different identities for it
 - a trade whose currency disagrees with its symbol is NOT rewritten (its price may really be
   in the other currency); it is listed and the migration refuses to write until it is fixed by hand
 - missing trades / cash / watchlist are NOT invented; the migration refuses instead
@@ -22,7 +25,7 @@ import sys
 import time
 
 from src.domain.symbols import canonical_symbol, currency_of, market_of
-from src.schemas.state import normalize_timestamp
+from src.schemas.state import legacy_uid, normalize_timestamp
 from src.services.state_store import REQUIRED_KEYS, StateLockedError, acquire_lock, atomic_write, parse_state
 
 
@@ -32,6 +35,12 @@ def migrate(raw: dict):
     missing = [k for k in REQUIRED_KEYS if k not in state]
     if missing:
         return state, notes, [f"missing {', '.join(missing)}: not an app_state file this tool can convert"]
+
+    # Assign uids from the stored fields before anything is normalised, exactly as the server
+    # derives them on load, so a running server and this tool agree on every trade's identity.
+    missing_uid = [t for t in state["trades"] if not t.get("uid") and isinstance(t.get("id"), int)]
+    for t in missing_uid:
+        t["uid"] = legacy_uid(t)
 
     int_ids = [t["id"] for t in state["trades"] if isinstance(t.get("id"), int)]
     next_id = max(int_ids, default=0) + 1
@@ -57,6 +66,13 @@ def migrate(raw: dict):
             notes.append(f"trade {t['id']}: currency set to {expected}")
         elif t["currency"] != expected:
             blockers.append(f"trade {t['id']} {sym}: currency {t['currency']} but {sym} trades in {expected}; fix price/currency by hand")
+
+    for t in state["trades"]:
+        if not t.get("uid"):          # string-id trades renumbered above
+            t["uid"] = legacy_uid(t)
+            missing_uid.append(t)
+    if missing_uid:
+        notes.append(f"{len(missing_uid)} trades: uid assigned and persisted")
 
     merged = {}
     for w in state["watchlist"]:

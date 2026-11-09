@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import threading
+import uuid
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
@@ -85,8 +86,9 @@ def atomic_write(path: str, state: Dict[str, Any]) -> str:
 
 class StateStore:
     """
-    Single owner of app_state.json. Writing the file while the server runs is not supported:
-    stop the server, edit / git pull / migrate, then start it again.
+    Single owner of app_state.json. Only this process writes the file: the API through
+    `mutate()`, and the git sync through `exclusive()` + `adopt()`. Editing the file by hand
+    while the server runs is not supported.
 
     - The owner lock (`<file>.lock`) is taken before anything else, including the git pull
       passed as `before_load`, so a second server cannot touch the file at all.
@@ -109,6 +111,7 @@ class StateStore:
         self._on_saved = on_saved
         self._lock = threading.RLock()
         self._lock_fd = acquire_lock(self.path)
+        self.epoch = uuid.uuid4().hex[:8]
         try:
             if before_load:
                 before_load()
@@ -148,11 +151,35 @@ class StateStore:
         if current != self._disk_digest:
             raise StateConflictError(
                 f"{self.path} was changed outside this server since it was loaded; "
-                "restart the server to load the new version (nothing was saved)")
+                "do not edit it while the server runs - restart to load it (nothing was saved)")
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             return copy.deepcopy(self._state)
+
+    def versioned_snapshot(self):
+        """(version, state) copied together, so a response never pairs old data with a new
+        version. The version includes a per-process epoch, so a restart never repeats one."""
+        with self._lock:
+            return f"{self.epoch}:{self.revision}", copy.deepcopy(self._state)
+
+    def exclusive(self):
+        """Hold the store lock while the git sync works on the file, so no API save interleaves."""
+        return self._lock
+
+    def adopt(self, state: Dict[str, Any], data: bytes):
+        """Install a version the git sync just placed on disk (`data` = the file's exact bytes).
+        Must be called inside `exclusive()`. Counts as a save: revision and hook fire as usual."""
+        validated = parse_state(state)
+        self._disk_digest = hashlib.sha256(data).hexdigest()
+        self._state = validated
+        self.is_fresh = False
+        self.revision += 1
+        if self._on_saved:
+            try:
+                self._on_saved(self.revision, copy.deepcopy(validated))
+            except Exception as e:
+                logger.error(f"Post-save hook failed: {e}")
 
     def mutate(self, fn: Callable[[Dict[str, Any]], Any]) -> Any:
         with self._lock:

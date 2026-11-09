@@ -10,7 +10,9 @@ from typing import Dict, Iterable, List, Optional
 
 
 def trade_sort_key(t: dict):
-    return (t["timestamp"], t["id"])
+    # `id` orders same-minute trades as entered; `uid` breaks ties deterministically when two
+    # hosts happened to use the same number, so every host replays in the same order.
+    return (t["timestamp"], t["id"], t.get("uid", ""))
 
 
 @dataclass

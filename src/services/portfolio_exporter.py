@@ -72,24 +72,22 @@ class ExportWorker:
 
     Snapshots carry the StateStore revision; an older revision arriving late is dropped, so
     remote holdings can never move backwards within this process. Identical (holdings, targets)
-    are not re-sent. Failures are retried with exponential backoff. `hold()` blocks delivery
-    (e.g. when the git pull failed and the local state may be stale) while still recording
-    what would be sent."""
+    are not re-sent. Failures are retried with exponential backoff.
 
-    def __init__(self, export_fn=trigger_portfolio_export, retry_base=30, retry_max=1800):
+    `ready()` gates delivery: with git sync it is "this host matches the remote ledger", so a
+    host that is offline, behind, or in conflict never publishes holdings the other host has
+    already superseded. While not ready the newest snapshot waits; `poke()` re-checks."""
+
+    def __init__(self, export_fn=trigger_portfolio_export, ready=lambda: True, retry_base=30, retry_max=1800):
         self._export_fn = export_fn
+        self._ready = ready
         self._cond = threading.Condition()
         self._pending = None          # (revision, state)
         self._latest_rev = -1
         self._last_key = None
-        self._held = None
         self._retry_base, self._retry_max = retry_base, retry_max
         self.status = {"state": "idle", "error": None, "revision": None}
         threading.Thread(target=self._run, name="portfolio-export", daemon=True).start()
-
-    def hold(self, reason: str):
-        self._held = reason
-        self.status.update(state="held", error=reason)
 
     def submit(self, revision: int, app_state: dict):
         with self._cond:
@@ -99,16 +97,24 @@ class ExportWorker:
             self._pending = (revision, app_state)
             self._cond.notify()
 
+    def poke(self):
+        with self._cond:
+            self._cond.notify()
+
     def _run(self):
         delay = None
         while True:
             with self._cond:
-                if self._pending is None or delay:
+                if self._pending is None or delay or not self._ready():
                     self._cond.wait(timeout=delay)
                 if self._pending is None:
                     delay = None
                     continue
                 revision, state = self._pending
+            if not self._ready():
+                if self.status["state"] != "off":
+                    self.status.update(state="waiting", error="waiting for state sync")
+                continue
             try:
                 delay = self._deliver(revision, state, delay)
             except Exception as e:
@@ -116,17 +122,15 @@ class ExportWorker:
                 self.status.update(state="failed", error=str(e))
                 delay = min((delay or self._retry_base) * 2, self._retry_max)
 
+    def _done(self, revision):
+        with self._cond:
+            if self._pending and self._pending[0] == revision:
+                self._pending = None
+
     def _deliver(self, revision, state, delay):
-        if self._held:
-            with self._cond:
-                if self._pending and self._pending[0] == revision:
-                    self._pending = None
-            return None
         if not _resolve_targets(state)["methods"]:
             self.status.update(state="disabled", error=None, revision=revision)
-            with self._cond:
-                if self._pending and self._pending[0] == revision:
-                    self._pending = None
+            self._done(revision)
             return None
         key = _delivery_key(state)
         if key != self._last_key:
@@ -136,9 +140,7 @@ class ExportWorker:
                 return min((delay or self._retry_base) * 2, self._retry_max)
             self._last_key = key
         self.status.update(state="ok", error=None, revision=revision)
-        with self._cond:
-            if self._pending and self._pending[0] == revision:
-                self._pending = None
+        self._done(revision)
         return None
 
 

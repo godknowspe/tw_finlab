@@ -1,4 +1,5 @@
 import datetime
+import uuid
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -18,9 +19,22 @@ def normalize_timestamp(value) -> str:
     return dt.isoformat(timespec="minutes" if dt.second == 0 and dt.microsecond == 0 else "seconds")
 
 
+# Stable namespace for deriving uids of trades recorded before uids existed.
+LEGACY_UID_NS = uuid.UUID("6f1d3c2a-9a57-4c1e-9d61-0e5b8f3a7c21")
+
+
+def legacy_uid(t: dict) -> str:
+    """Deterministic uid for a pre-uid trade, so every host derives the same value."""
+    key = "|".join(str(t.get(k)) for k in ("id", "symbol", "action", "shares", "price", "timestamp"))
+    return str(uuid.uuid5(LEGACY_UID_NS, key))
+
+
 class Trade(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+    # Identity across hosts: merge and delete go by uid. `id` is a display number and the
+    # same-minute ordering tiebreak; it is never renumbered and may repeat across hosts.
+    uid: str = ""
     id: int
     symbol: str
     action: Literal["BUY", "SELL"]
@@ -46,6 +60,13 @@ class Trade(BaseModel):
     @classmethod
     def _timestamp(cls, v) -> str:
         return normalize_timestamp(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _uid(cls, data):
+        if isinstance(data, dict) and not data.get("uid"):
+            data = {**data, "uid": legacy_uid(data)}
+        return data
 
     @model_validator(mode="after")
     def _currency_matches_market(self):
@@ -101,9 +122,9 @@ class AppState(BaseModel):
 
     @model_validator(mode="after")
     def _unique(self):
-        ids = [t.id for t in self.trades]
-        if len(ids) != len(set(ids)):
-            raise ValueError("duplicate trade id")
+        uids = [t.uid for t in self.trades]
+        if len(uids) != len(set(uids)):
+            raise ValueError("duplicate trade uid")
         executions = [(t.source, t.source_trade_id) for t in self.trades if t.source_trade_id]
         if len(executions) != len(set(executions)):
             raise ValueError("duplicate broker execution (source, source_trade_id)")

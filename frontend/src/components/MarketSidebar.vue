@@ -184,7 +184,7 @@ const deleteTrade = async (id) => {
         </div>
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
-        <div v-for="trade in portfolioStore.trades" :key="trade.id" 
+        <div v-for="trade in portfolioStore.trades" :key="trade.uid" 
              class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50">
           <div>
             <div class="font-bold text-white text-xs">
@@ -197,7 +197,7 @@ const deleteTrade = async (id) => {
               <div class="text-xs text-white font-mono">{{ trade.shares }}股</div>
               <div class="text-[10px] text-gray-500 font-mono">@{{ trade.price.toFixed(2) }}</div>
             </div>
-            <button @click.stop="deleteTrade(trade.id)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Delete Trade">
+            <button @click.stop="deleteTrade(trade.uid)" class="text-gray-600 hover:text-red-400 transition-colors cursor-pointer" title="Delete Trade">
               <Trash2 :size="14" />
             </button>
           </div>

@@ -9,6 +9,7 @@ export const usePortfolioStore = defineStore('portfolio', {
     trades: [],
     summary: {},
     sync: {},
+    revision: null,
   }),
   actions: {
     async fetchPortfolio() {
@@ -18,6 +19,7 @@ export const usePortfolioStore = defineStore('portfolio', {
         this.trades = res.data.trades;
         this.summary = res.data.summary;
         this.sync = res.data.sync || {};
+        this.revision = res.data.revision;
         return res.data;
       } catch (error) {
         console.error('Failed to fetch portfolio:', error);
@@ -27,9 +29,19 @@ export const usePortfolioStore = defineStore('portfolio', {
       await axios.post('/api/trades', trade);
       await this.fetchPortfolio();
     },
-    async deleteTrade(tradeId) {
-      await axios.delete(`/api/trades/${tradeId}`);
+    async deleteTrade(uid) {
+      await axios.delete(`/api/trades/${encodeURIComponent(uid)}`);
       await this.fetchPortfolio();
+    },
+    async pollRevision() {
+      // Returns true when the server state changed since the last fetch (e.g. another host synced).
+      try {
+        const res = await axios.get('/api/revision');
+        this.sync = res.data.sync || {};
+        return this.revision !== null && res.data.revision !== this.revision;
+      } catch (e) {
+        return false;
+      }
     },
     async syncTrades() {
       const res = await axios.post('/api/sync/trades');

@@ -1,3 +1,4 @@
+import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,7 +6,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from src.domain.ledger import replay, validate_trades
+from src.domain.ledger import replay, trade_sort_key, validate_trades
 from src.domain.symbols import canonical_symbol, currency_of, market_of
 from src.domain.valuation import historical_roi, value_positions
 from src.schemas.state import normalize_timestamp
@@ -58,7 +59,7 @@ def _commit_trades(mutator):
 
 @router.get("/portfolio")
 def get_portfolio(db: Session = Depends(deps.get_db)):
-    s = deps.state().snapshot()
+    version, s = deps.state().versioned_snapshot()
     ledger = replay(s["trades"], s["cash"]["TWD"], s["cash"]["USD"])
     symbols = set(ledger.open_positions()) | {w["symbol"] for w in s["watchlist"]}
     quotes = get_quotes(symbols, shioaji_api_if_enabled(ConfigService(db)))
@@ -77,10 +78,18 @@ def get_portfolio(db: Session = Depends(deps.get_db)):
         "watchlist": watchlist,
         "positions": valued["positions"],
         "summary": valued["summary"],
-        "trades": sorted(s["trades"], key=lambda t: (t["timestamp"], t["id"]), reverse=True),
+        "trades": sorted(s["trades"], key=trade_sort_key, reverse=True),
         "settings": {"usd_twd_rate": _fx(s)},
         "sync": deps.sync_status(),
+        "revision": version,
     }
+
+
+@router.get("/revision")
+def get_revision():
+    """Cheap poll target: the frontend refetches when this changes (e.g. trades synced from another host)."""
+    version, _ = deps.state().versioned_snapshot()
+    return {"revision": version, "sync": deps.sync_status()}
 
 
 @router.post("/watchlist")
@@ -111,20 +120,22 @@ def add_trade(item: TradeIn):
 
     def apply(s):
         trade = item.model_dump()
-        trade.update(symbol=sym, timestamp=ts, currency=currency_of(sym),
+        trade.update(symbol=sym, timestamp=ts, currency=currency_of(sym), uid=str(uuid.uuid4()),
                      id=max([t["id"] for t in s["trades"]], default=0) + 1)
         s["trades"].append(trade)
     _commit_trades(apply)
     return {"status": "success"}
 
 
-@router.delete("/trades/{trade_id}")
-def del_trade(trade_id: int):
+@router.delete("/trades/{uid}")
+def del_trade(uid: str):
+    # By uid: `id` numbers can repeat after another host's trades are merged in, so deleting
+    # by number from a page that has not refreshed could remove a different trade.
     def apply(s):
         before = len(s["trades"])
-        s["trades"] = [t for t in s["trades"] if t["id"] != trade_id]
+        s["trades"] = [t for t in s["trades"] if t["uid"] != uid]
         if len(s["trades"]) == before:
-            raise HTTPException(status_code=404, detail=f"trade {trade_id} not found")
+            raise HTTPException(status_code=404, detail="trade not found (it may have been deleted on another host)")
     _commit_trades(apply)
     return {"status": "success"}
 
@@ -150,7 +161,7 @@ def sync_trades(db: Session = Depends(deps.get_db)):
             if key in seen:
                 continue
             seen.add(key)
-            s["trades"].append({**f, "id": next_id})
+            s["trades"].append({**f, "id": next_id, "uid": str(uuid.uuid4())})
             next_id += 1
             added += 1
         return added

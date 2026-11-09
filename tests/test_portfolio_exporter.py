@@ -176,11 +176,26 @@ def test_export_worker_delivers_to_new_target_and_retries_failures():
     assert w.status["state"] == "ok"
 
 
-def test_export_worker_hold_blocks_delivery():
+def test_export_worker_waits_until_ready_and_then_delivers_latest():
+    from src.services.portfolio_exporter import ExportWorker
+    calls, ready = [], {"v": False}
+    w = ExportWorker(lambda s: calls.append(len(s["trades"])) or True, ready=lambda: ready["v"])
+    w.submit(1, _worker_state(1))
+    w.submit(2, _worker_state(2))
+    _drain(w)
+    assert calls == [] and w._pending is not None       # kept, not dropped
+    ready["v"] = True
+    w.poke()
+    _drain(w)
+    assert calls == [2] and w.status["state"] == "ok"
+
+
+def test_only_the_publisher_host_exports():
+    """Two ledger writers must not both PATCH the Gist: an old export could land after a new one."""
     from src.services.portfolio_exporter import ExportWorker
     calls = []
-    w = ExportWorker(lambda s: calls.append(1) or True)
-    w.hold("pull failed")
-    w.submit(1, _worker_state(1))
-    _drain(w)
-    assert calls == [] and w.status["state"] == "held"
+    non_publisher = ExportWorker(lambda s: calls.append(1) or True, ready=lambda: False)
+    non_publisher.status.update(state="off")
+    non_publisher.submit(1, _worker_state(1))
+    _drain(non_publisher)
+    assert calls == [] and non_publisher.status["state"] == "off"

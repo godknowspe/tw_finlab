@@ -47,3 +47,14 @@ def test_write_refuses_while_server_owns_file_and_writes_atomically_otherwise(tm
     assert main([str(p), "--write"]) == 0
     StateStore(str(p)).close()                           # migrated file loads
     assert len(list(tmp_path.glob("app_state.json.bak-*"))) == 1
+
+
+def test_persisted_uids_match_what_the_server_derives(tmp_path):
+    from src.services.state_store import parse_state
+    current = {"cash": {"TWD": 1000, "USD": 0}, "watchlist": [],
+               "trades": [{"id": 1, "symbol": "2330", "action": "BUY", "shares": 1, "price": 10.0,
+                           "timestamp": "2026-05-03T10:23", "currency": "TWD"}]}
+    derived = parse_state(current)["trades"][0]["uid"]
+    migrated, notes, blockers = migrate(current)
+    assert not blockers and migrated["trades"][0]["uid"] == derived
+    assert any("uid assigned" in n for n in notes)

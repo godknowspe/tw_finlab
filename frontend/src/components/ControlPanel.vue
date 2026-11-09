@@ -20,7 +20,7 @@ const indicators = [
 const syncLabel = (st) => {
   if (!st) return '-';
   if (st.enabled === false) return 'off';
-  return st.state + (st.error ? ' (' + st.error + ')' : '');
+  return st.state + (st.last_sync ? ' ' + st.last_sync : '');
 };
 </script>
 
@@ -32,6 +32,10 @@ const syncLabel = (st) => {
       <span class="ml-auto text-[9px] font-mono text-gray-500 text-right truncate" :title="JSON.stringify(portfolioStore.sync)">
         git: {{ syncLabel(portfolioStore.sync.git) }} · gist: {{ syncLabel(portfolioStore.sync.export) }}
       </span>
+    </div>
+    <div v-if="portfolioStore.sync.git?.state === 'conflict'" class="px-4 py-2 text-[10px] text-yellow-400 bg-yellow-900/20 border-b border-yellow-700/40">
+      兩台主機的帳本有衝突，已暫停同步與匯出。本機仍可記錄，請到 tw_finlab-data 手動合併後重啟：
+      <div class="font-mono mt-1 break-all">{{ portfolioStore.sync.git.error }}</div>
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">

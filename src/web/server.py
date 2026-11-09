@@ -26,21 +26,31 @@ FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../f
 
 
 def _build_state() -> StateStore:
-    """Pull the data repo (if configured), load and validate state, and wire the post-save hooks.
+    """Load and validate state (after a fast-forward pull of the data repo, if configured),
+    then start the git sync loop and the export worker.
     A corrupt state file raises StateLoadError here and the server refuses to start."""
     explicit = os.environ.get("TW_FINLAB_STATE_FILE") or None
     sync = GitStateSync(explicit or StateStore.default_path(), explicit=bool(explicit))
-    exporter = ExportWorker()
+    # Several hosts may write the ledger, but only one publishes holdings: two hosts PATCHing
+    # the same Gist cannot be ordered, so a slow old export could land after a newer one.
+    # Without git sync the single host is the publisher. With it, set TW_FINLAB_EXPORT=1 on
+    # exactly one host; it exports only when it holds the same ledger as the remote.
+    # The role is configuration, never inferred from git health: a configured multi-host
+    # setup whose git lookup fails must not promote itself to publisher.
+    role = os.environ.get("TW_FINLAB_EXPORT")
+    publisher = role == "1" if (explicit or role is not None) else True
+    exporter = ExportWorker(ready=lambda: publisher and sync.in_sync)
+    if not publisher:
+        exporter.status.update(state="off", error="this host does not publish (TW_FINLAB_EXPORT is not 1)")
 
     def on_saved(revision, state):
-        sync.schedule_push()
+        sync.schedule()
         exporter.submit(revision, state)
 
     # The store takes the owner lock first, then runs the pull, then loads.
-    store = StateStore(explicit, on_saved=on_saved, before_load=sync.pull)
-    if not sync.trusted:
-        # The local copy may be older than what another host already published.
-        exporter.hold("state repo pull failed; resolve it and restart before exports resume")
+    store = StateStore(explicit, on_saved=on_saved, before_load=sync.startup_pull)
+    sync.on_synced = exporter.poke
+    sync.start(store)
     deps._status.update(git=lambda: sync.status, export=lambda: exporter.status)
     if store.is_fresh:
         # A default state must never replace the remote holdings backup.
