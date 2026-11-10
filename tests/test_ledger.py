@@ -18,12 +18,40 @@ def test_moving_average_with_fees():
         t(1, "2330", "BUY", 1000, 100.0, "2026-01-02T09:00", fee=142),
         t(2, "2330", "BUY", 1000, 200.0, "2026-01-03T09:00", fee=285),
         t(3, "2330", "SELL", 1000, 200.0, "2026-01-04T09:00", fee=285, tax=600),
-    ], cash_twd=1_000_000)
+    ])
     pos = L.positions["2330"]
     assert pos.shares == 1000
     assert pos.avg_cost == pytest.approx((100_142 + 200_285) / 2000)
     assert L.realized_pnl["TWD"] == pytest.approx(200_000 - 885 - 150_213.5)
-    assert L.cash["TWD"] == pytest.approx(1_000_000 - 100_142 - 200_285 + 200_000 - 885)
+    # Both buys had to be funded; the sale proceeds stay as cash.
+    assert L.funded["TWD"] == pytest.approx(100_142 + 200_285)
+    assert L.cash["TWD"] == pytest.approx(200_000 - 885)
+
+
+def test_buys_are_funded_from_sale_proceeds_first_and_cash_never_goes_negative():
+    L = replay([
+        t(1, "0050", "BUY", 1000, 100.0, "2026-01-02T09:00"),     # deposit 100,000
+        t(2, "0050", "SELL", 1000, 120.0, "2026-01-03T09:00"),    # cash 120,000
+        t(3, "0050", "BUY", 1500, 100.0, "2026-01-04T09:00"),     # uses 120,000 + deposits 30,000
+    ])
+    assert L.funded["TWD"] == pytest.approx(130_000)
+    assert L.cash["TWD"] == pytest.approx(0)
+
+
+def test_break_even_counts_realized_gains_and_losses():
+    """The user's 0050 question: selling must lower what is left to recover."""
+    L = replay([
+        t(1, "0050", "BUY", 2000, 10.0, "2026-01-02T09:00"),
+        t(2, "0050", "SELL", 1000, 15.0, "2026-01-03T09:00"),     # +5,000 realised
+    ])
+    pos = L.positions["0050"]
+    assert pos.avg_cost == pytest.approx(10.0)                  # moving average keeps 10
+    assert pos.break_even == pytest.approx((20_000 - 15_000) / 1000)   # 5: the gain is banked
+    L = replay([
+        t(1, "0050", "BUY", 2000, 10.0, "2026-01-02T09:00"),
+        t(2, "0050", "SELL", 1000, 8.0, "2026-01-03T09:00", fee=20.0),
+    ])
+    assert L.positions["0050"].break_even == pytest.approx((20_000 - 8_000 + 20) / 1000)  # loss raises it
 
 
 def test_same_minute_buy_then_sell_ordered_by_id():
@@ -48,7 +76,7 @@ def test_symbol_rules():
 
 
 def test_missing_price_is_valued_at_cost_not_zero():
-    L = replay([t(1, "2454", "BUY", 10, 4220.0, "2026-10-15T14:40")], cash_twd=100_000)
+    L = replay([t(1, "2454", "BUY", 10, 4220.0, "2026-10-15T14:40")])
     v = value_positions(L, {}, 32.5)
     assert v["positions"][0]["market_value"] == pytest.approx(42_200)
     assert v["summary"]["estimated_prices"] == ["2454"]

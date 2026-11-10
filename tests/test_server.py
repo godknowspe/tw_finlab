@@ -33,7 +33,10 @@ def test_portfolio_values_positions(client):
     d = client.get("/api/portfolio").json()
     assert d["positions"][0]["market_value"] == 110_000
     assert d["watchlist"][0]["chg_pct"] == "+4.76%"
-    assert d["summary"]["cash_twd"] == 900_000
+    # The 100,000 buy is a deposit (state cash is ignored), so no cash is left over.
+    assert d["summary"]["cash_twd"] == 0 and d["summary"]["deposited_twd"] == 100_000
+    assert d["summary"]["total_equity_twd"] == 110_000
+    assert d["positions"][0]["break_even"] == 100.0
 
 
 def test_add_trade_validates_and_persists(client):

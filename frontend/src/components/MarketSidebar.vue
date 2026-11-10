@@ -160,7 +160,11 @@ const deleteTrade = async (id) => {
               <span class="text-[9px] px-1 rounded bg-gray-700 text-gray-400">{{ pos.currency === 'USD' ? '🇺🇸' : '🇹🇼' }}</span>
               {{ pos.symbol }}
             </div>
-            <div class="text-[10px] text-blue-400 font-mono">{{ pos.shares.toLocaleString() }} @ {{ pos.avg_cost.toFixed(2) }}</div>
+            <div class="text-[10px] text-blue-400 font-mono" title="股數 @ 平均成本（移動平均）">{{ pos.shares.toLocaleString() }} @ {{ pos.avg_cost.toFixed(2) }}</div>
+            <div class="text-[10px] font-mono" :class="pos.break_even <= pos.avg_cost ? 'text-text-green/80' : 'text-text-red/80'"
+                 title="損益兩平價：(買入總額 − 賣出總額) ÷ 剩餘股數。已實現的獲利會壓低它，虧損會拉高它；全部以這個價格賣出時，這檔的歷史總損益為 0">
+              兩平 {{ pos.break_even.toFixed(2) }}
+            </div>
           </div>
           <div class="text-right">
             <div class="text-sm font-mono font-bold" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">

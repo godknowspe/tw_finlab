@@ -1,9 +1,9 @@
 """
 Valuation on top of `ledger.replay`. Two return measures, named for what they divide by:
 
-- account equity: starting cash + trades, marked to market (what /api/portfolio shows)
-- invested-capital ROI: equity gain over the cash that actually had to be deposited to fund
-  the buys (what the Equity chart shows; starting cash balances are ignored on purpose)
+- account equity: cash left over from sales + holdings at market (what /api/portfolio shows);
+  money only enters as the deposits needed to fund buys (see ledger.py)
+- invested-capital ROI: that equity over the deposits made so far (what the Equity chart shows)
 
 A position with no known price is never valued at 0: current valuation falls back to cost
 and says so; history carries the last known price forward and, before the first known price,
@@ -37,6 +37,7 @@ def value_positions(ledger: Ledger, prices: Dict[str, float], fx_usd_twd: float)
             "symbol": sym,
             "shares": pos.shares,
             "avg_cost": round(pos.avg_cost, 4),
+            "break_even": round(pos.break_even, 4),
             "last_price": round(price, 4),
             "currency": pos.currency,
             "market_value": round(market_value, 2),
@@ -51,6 +52,8 @@ def value_positions(ledger: Ledger, prices: Dict[str, float], fx_usd_twd: float)
         "summary": {
             "cash_twd": round(ledger.cash["TWD"], 2),
             "cash_usd": round(ledger.cash["USD"], 2),
+            "deposited_twd": round(ledger.funded["TWD"], 2),
+            "deposited_usd": round(ledger.funded["USD"], 2),
             "market_value_twd": round(mv["TWD"], 2),
             "market_value_usd": round(mv["USD"], 2),
             "realized_twd": round(ledger.realized_pnl["TWD"], 2),
@@ -106,8 +109,8 @@ def historical_roi(trades: List[dict], closes: pd.DataFrame, fx_usd_twd: float, 
                 else:
                     mv[pos.currency] += pos.cost
                     estimated.add(sym)
-            eq_twd = ledger.funded_cash["TWD"] + mv["TWD"]
-            eq_usd = ledger.funded_cash["USD"] + mv["USD"]
+            eq_twd = ledger.cash["TWD"] + mv["TWD"]
+            eq_usd = ledger.cash["USD"] + mv["USD"]
             inv_twd, inv_usd = ledger.funded["TWD"], ledger.funded["USD"]
             stamp = day.isoformat()
             out["tw"].append({"time": stamp, "value": _roi(eq_twd, inv_twd)})

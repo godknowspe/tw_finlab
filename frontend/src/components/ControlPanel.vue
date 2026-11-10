@@ -49,13 +49,19 @@ const syncLabel = (st) => {
             <span class="text-gray-400">Net Equity (TWD):</span>
             <span class="text-white font-bold">${{ portfolioStore.summary?.total_equity_twd?.toLocaleString(undefined, {maximumFractionDigits:0}) }}</span>
           </div>
-          <div class="flex justify-between text-[10px]">
+          <div class="flex justify-between text-[10px]" title="賣出後還沒用來買股的錢">
             <span class="text-gray-500">TWD Cash:</span>
-            <span>${{ portfolioStore.summary?.cash_twd?.toLocaleString() }}</span>
+            <span>${{ portfolioStore.summary?.cash_twd?.toLocaleString(undefined, {maximumFractionDigits:0}) }}</span>
           </div>
-          <div class="flex justify-between text-[10px]">
+          <div class="flex justify-between text-[10px]" title="賣出後還沒用來買股的錢">
             <span class="text-gray-500">USD Cash:</span>
-            <span>${{ portfolioStore.summary?.cash_usd?.toLocaleString() }}</span>
+            <span>${{ portfolioStore.summary?.cash_usd?.toLocaleString(undefined, {maximumFractionDigits:2}) }}</span>
+          </div>
+          <div class="flex justify-between text-[10px] text-gray-500 border-t border-gray-800 pt-2"
+               title="買入時現金不足的部分都算入金；Equity 頁的報酬率以它為本金">
+            <span>Deposited:</span>
+            <span>${{ portfolioStore.summary?.deposited_twd?.toLocaleString(undefined, {maximumFractionDigits:0}) }}
+              · US${{ portfolioStore.summary?.deposited_usd?.toLocaleString(undefined, {maximumFractionDigits:0}) }}</span>
           </div>
           <div v-if="portfolioStore.summary?.estimated_prices?.length" class="text-[9px] text-yellow-500 pt-1">
             No price for {{ portfolioStore.summary.estimated_prices.join(', ') }}; valued at cost.

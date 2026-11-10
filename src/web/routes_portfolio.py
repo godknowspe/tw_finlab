@@ -60,7 +60,8 @@ def _commit_trades(mutator):
 @router.get("/portfolio")
 def get_portfolio(db: Session = Depends(deps.get_db)):
     version, s = deps.state().versioned_snapshot()
-    ledger = replay(s["trades"], s["cash"]["TWD"], s["cash"]["USD"])
+    # Cash is derived from trades (shortfalls count as deposits); state["cash"] is not used.
+    ledger = replay(s["trades"])
     symbols = set(ledger.open_positions()) | {w["symbol"] for w in s["watchlist"]}
     quotes = get_quotes(symbols, shioaji_api_if_enabled(ConfigService(db)))
     valued = value_positions(ledger, {k: v[0] for k, v in quotes.items()}, _fx(s))
