@@ -11,6 +11,7 @@ from src.domain.symbols import canonical_symbol, currency_of, market_of
 from src.domain.valuation import historical_roi, value_positions
 from src.schemas.state import normalize_timestamp
 from src.services.config_service import ConfigService
+from src.services.fx_service import FX_SYMBOL, get_usd_twd
 from src.services.market_data import MarketDataService
 from src.services.quote_service import get_quotes, shioaji_api_if_enabled
 from src.services.state_store import StateConflictError
@@ -35,7 +36,7 @@ class TradeIn(BaseModel):
     tax: float = Field(default=0.0, ge=0, allow_inf_nan=False)
 
 
-def _fx(snapshot) -> float:
+def _configured_fx(snapshot) -> float:
     return float(snapshot["settings"].get("usd_twd_rate", 32.5))
 
 
@@ -64,7 +65,9 @@ def get_portfolio(db: Session = Depends(deps.get_db)):
     ledger = replay(s["trades"])
     symbols = set(ledger.open_positions()) | {w["symbol"] for w in s["watchlist"]}
     quotes = get_quotes(symbols, shioaji_api_if_enabled(ConfigService(db)))
-    valued = value_positions(ledger, {k: v[0] for k, v in quotes.items()}, _fx(s))
+    fx, fx_live = get_usd_twd(_configured_fx(s))
+    valued = value_positions(ledger, {k: v[0] for k, v in quotes.items()}, fx)
+    valued["summary"]["usd_twd_live"] = fx_live
 
     watchlist = []
     for item in s["watchlist"]:
@@ -80,7 +83,7 @@ def get_portfolio(db: Session = Depends(deps.get_db)):
         "positions": valued["positions"],
         "summary": valued["summary"],
         "trades": sorted(s["trades"], key=trade_sort_key, reverse=True),
-        "settings": {"usd_twd_rate": _fx(s)},
+        "settings": {"usd_twd_rate": _configured_fx(s)},
         "sync": deps.sync_status(),
         "revision": version,
     }
@@ -173,8 +176,11 @@ def sync_trades(db: Session = Depends(deps.get_db)):
 @router.get("/equity")
 def get_equity(db: Session = Depends(deps.get_db)):
     s = deps.state().snapshot()
-    closes = MarketDataService(db).daily_closes(t["symbol"] for t in s["trades"])
-    return historical_roi(s["trades"], closes, _fx(s))
+    market = MarketDataService(db)
+    closes = market.daily_closes(t["symbol"] for t in s["trades"])
+    fx_bars = market.get_bars(FX_SYMBOL, "1d") if any(t["currency"] == "USD" for t in s["trades"]) else None
+    fx = fx_bars["close"] if fx_bars is not None and not fx_bars.empty else None
+    return historical_roi(s["trades"], closes, fx, _configured_fx(s))
 
 
 @router.get("/analysis")

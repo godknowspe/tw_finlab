@@ -8,6 +8,8 @@ reduce realised PnL.
 Cash starts at 0 and is never negative: when a buy costs more than the cash on hand, the
 shortfall is recorded as a deposit (`funded`). Sale proceeds stay as cash and fund later buys
 first. So cash is "money left over from sales", and `funded` is the capital put in.
+`funded_twd` is the same deposits valued in TWD at the USD/TWD rate of the day they were made
+(when a rate lookup is given), i.e. how much TWD actually went in.
 
 Each buy is also tracked as a lot. A sell is split across the open lots in proportion to their
 remaining shares, which is exactly what the moving average does to the position, so the lots
@@ -64,12 +66,14 @@ class Ledger:
     positions: Dict[str, Position] = field(default_factory=dict)
     realized_pnl: Dict[str, float] = field(default_factory=lambda: {"TWD": 0.0, "USD": 0.0})
     funded: Dict[str, float] = field(default_factory=lambda: {"TWD": 0.0, "USD": 0.0})
+    funded_twd: float = 0.0
 
     @classmethod
     def empty(cls) -> "Ledger":
         return cls()
 
-    def apply(self, t: dict):
+    def apply(self, t: dict, usd_twd: float = None):
+        """`usd_twd`: rate on the trade's day, used only to value USD deposits in TWD."""
         sym, cur = t["symbol"], t["currency"]
         shares, price = int(t["shares"]), float(t["price"])
         fee, tax = float(t.get("fee", 0.0)), float(t.get("tax", 0.0))
@@ -80,6 +84,7 @@ class Ledger:
             if self.cash[cur] < outlay:
                 deposit = outlay - self.cash[cur]
                 self.funded[cur] += deposit
+                self.funded_twd += deposit * (usd_twd or 0.0) if cur == "USD" else deposit
                 self.cash[cur] += deposit
             self.cash[cur] -= outlay
             pos.net_paid += outlay

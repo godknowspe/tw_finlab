@@ -15,3 +15,16 @@ def _isolate_portfolio_export(monkeypatch):
 
     monkeypatch.setattr("requests.patch", _no_network)
     monkeypatch.setattr("requests.put", _no_network)
+
+
+
+@pytest.fixture(autouse=True)
+def _offline_fx(monkeypatch):
+    """The live USD/TWD lookup must not reach yfinance from tests; act as if it is offline."""
+    import src.services.fx_service as fx
+    monkeypatch.setattr(fx, "_cache", None)
+
+    class _Offline:
+        def __init__(self, *a, **k):
+            raise RuntimeError("no network in tests")
+    monkeypatch.setattr(fx.yf, "Ticker", _Offline)

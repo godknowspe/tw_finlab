@@ -85,7 +85,7 @@ def test_missing_price_is_valued_at_cost_not_zero():
 def test_historical_roi_holds_unpriced_position_at_cost():
     trades = [t(1, "0050", "BUY", 1000, 100.0, "2026-10-12T09:00"), t(2, "2454", "BUY", 10, 4000.0, "2026-10-14T09:00")]
     closes = pd.DataFrame({"0050": [100.0, 110.0, 110.0]}, index=pd.to_datetime(["2026-10-12", "2026-10-13", "2026-10-14"]))
-    out = historical_roi(trades, closes, 32.5, today=datetime.date(2026, 10, 14))
+    out = historical_roi(trades, closes, None, 32.5, today=datetime.date(2026, 10, 14))
     # 0050 +10k on 100k invested; 2454 bought on 10/14 at cost must not drag ROI to a loss.
     assert out["tw"][-1]["value"] == pytest.approx(10_000 / 140_000 * 100, abs=0.01)
     assert out["estimated"] == ["2454"]
@@ -113,6 +113,26 @@ def test_bar_pnl_weekly_bar_includes_trades_through_week_end():
 
 def test_historical_roi_seeds_price_from_before_first_trade_and_rejects_bad_prices():
     closes = pd.DataFrame({"VTI": [120.0, 0.0, float("inf")]}, index=pd.to_datetime(["2026-05-29", "2026-06-01", "2026-06-02"]))
-    out = historical_roi([t(1, "VTI", "BUY", 1, 100.0, "2026-06-01T10:00")], closes, 32.5, today=datetime.date(2026, 6, 2))
+    out = historical_roi([t(1, "VTI", "BUY", 1, 100.0, "2026-06-01T10:00")], closes, None, 32.5, today=datetime.date(2026, 6, 2))
     assert [p["value"] for p in out["us"]] == [20.0, 20.0]
     assert out["estimated"] == []
+
+
+
+def test_combined_roi_includes_currency_moves_at_daily_rates():
+    """USD 100 deposited at 30; the stock is flat but TWD weakens to 33: +10% in TWD terms."""
+    days = pd.to_datetime(["2026-06-01", "2026-06-02"])
+    closes = pd.DataFrame({"VTI": [100.0, 100.0]}, index=days)
+    fx = pd.Series([30.0, 33.0], index=days)
+    out = historical_roi([t(1, "VTI", "BUY", 1, 100.0, "2026-06-01T10:00")], closes, fx, 32.5, today=datetime.date(2026, 6, 2))
+    assert [p["value"] for p in out["us"]] == [0.0, 0.0]          # USD-only view: flat
+    assert [p["value"] for p in out["total"]] == [0.0, 10.0]      # TWD view: currency gain
+
+
+def test_deposits_in_twd_use_the_rate_of_the_buy_day():
+    from src.domain.ledger import Ledger
+    L = Ledger.empty()
+    L.apply(t(1, "VTI", "BUY", 1, 100.0, "2026-06-01T10:00"), usd_twd=30.0)
+    L.apply(t(2, "0050", "BUY", 1000, 100.0, "2026-06-01T10:00"), usd_twd=30.0)
+    L.apply(t(3, "VTI", "BUY", 1, 100.0, "2026-06-02T10:00"), usd_twd=33.0)
+    assert L.funded_twd == pytest.approx(100 * 30 + 100_000 + 100 * 33)

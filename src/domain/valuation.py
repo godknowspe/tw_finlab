@@ -69,8 +69,14 @@ def _roi(equity: float, invested: float) -> float:
     return round((equity / invested - 1.0) * 100, 2) if invested > 0 else 0.0
 
 
-def historical_roi(trades: List[dict], closes: pd.DataFrame, fx_usd_twd: float, today: datetime.date = None) -> dict:
-    """Daily invested-capital ROI per market and combined, from the first trade to today."""
+def historical_roi(trades: List[dict], closes: pd.DataFrame, fx: pd.Series, fallback_fx: float,
+                   today: datetime.date = None) -> dict:
+    """Daily invested-capital ROI per market and combined, from the first trade to today.
+
+    Combined ROI is in TWD: each day's USD equity is converted at that day's USD/TWD (`fx`,
+    carried forward over gaps), and USD deposits at the rate of the day they were made, so the
+    combined line includes currency gains and losses. Before the first known rate the earliest
+    one is used; `fallback_fx` only when there is no rate history at all."""
     if not trades:
         return {"tw": [], "us": [], "total": [], "estimated": []}
     today = today or datetime.date.today()
@@ -91,12 +97,22 @@ def historical_roi(trades: List[dict], closes: pd.DataFrame, fx_usd_twd: float, 
             if valid_price(p):
                 last_price[sym] = float(p)
 
+    rates = {}
+    if fx is not None and not fx.empty:
+        fx = fx.copy()
+        fx.index = pd.to_datetime(fx.index).date
+        rates = {d: float(r) for d, r in fx.items() if valid_price(r)}
+    # Start from the last rate on or before the first trade day, else the earliest known rate.
+    earlier = [d for d in rates if d <= day]
+    rate = rates[max(earlier)] if earlier else (rates[min(rates)] if rates else fallback_fx)
+
     ledger = Ledger.empty()
     estimated = set()
     out = {"tw": [], "us": [], "total": []}
     while day <= today:
+        rate = rates.get(day, rate)
         for t in by_day.get(day, []):
-            ledger.apply(t)
+            ledger.apply(t, usd_twd=rate)
         if day in closes.index:
             for sym, p in closes.loc[day].items():
                 if valid_price(p):
@@ -115,7 +131,7 @@ def historical_roi(trades: List[dict], closes: pd.DataFrame, fx_usd_twd: float, 
             stamp = day.isoformat()
             out["tw"].append({"time": stamp, "value": _roi(eq_twd, inv_twd)})
             out["us"].append({"time": stamp, "value": _roi(eq_usd, inv_usd)})
-            out["total"].append({"time": stamp, "value": _roi(eq_twd + eq_usd * fx_usd_twd, inv_twd + inv_usd * fx_usd_twd)})
+            out["total"].append({"time": stamp, "value": _roi(eq_twd + eq_usd * rate, ledger.funded_twd)})
         day += datetime.timedelta(days=1)
     out["estimated"] = sorted(estimated)
     return out
