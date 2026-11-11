@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useMarketStore } from '@/stores/market';
 import { usePortfolioStore, apiError } from '@/stores/portfolio';
 import { Plus, X, TrendingUp, Briefcase, History, RefreshCw, Trash2 } from 'lucide-vue-next';
@@ -8,6 +8,16 @@ const marketStore = useMarketStore();
 const portfolioStore = usePortfolioStore();
 
 const activeTab = ref('watchlist');
+
+// Holdings value in TWD, using the same USD/TWD rate as Net Equity, so the weights sum to 100%.
+const fx = computed(() => portfolioStore.summary?.usd_twd_rate || 32.5);
+const holdingsTwd = computed(() => (portfolioStore.summary?.market_value_twd || 0) + (portfolioStore.summary?.market_value_usd || 0) * fx.value);
+const weight = (pos) => {
+  const twd = pos.currency === 'USD' ? pos.market_value * fx.value : pos.market_value;
+  return holdingsTwd.value ? twd / holdingsTwd.value * 100 : 0;
+};
+const fmtMoney = (v, cur) => v.toLocaleString(undefined, { maximumFractionDigits: cur === 'USD' ? 2 : 0, minimumFractionDigits: cur === 'USD' ? 2 : 0 });
+const signed = (v, cur) => (v > 0 ? '+' : '') + fmtMoney(v, cur);
 const isSyncing = ref(false);
 
 const syncTrades = async () => {
@@ -146,9 +156,19 @@ const deleteTrade = async (id) => {
 
     <!-- Positions -->
     <div v-if="activeTab === 'positions'" class="flex-1 flex flex-col min-h-0">
-       <div class="flex justify-between px-4 py-2 text-[10px] text-gray-500 border-b border-border-line items-center bg-[#0d1117]">
+      <div class="px-4 py-2.5 border-b border-border-line bg-black/20 font-mono text-[10px] space-y-1">
+        <div class="flex justify-between">
+          <span class="text-gray-500 uppercase tracking-wider">Holdings Value</span>
+          <span class="text-white font-bold text-xs">NT${{ fmtMoney(holdingsTwd, 'TWD') }}</span>
+        </div>
+        <div class="flex justify-between text-gray-500">
+          <span>🇹🇼 NT${{ fmtMoney(portfolioStore.summary?.market_value_twd || 0, 'TWD') }}</span>
+          <span>🇺🇸 US${{ fmtMoney(portfolioStore.summary?.market_value_usd || 0, 'USD') }}</span>
+        </div>
+      </div>
+      <div class="flex justify-between px-4 py-2 text-[10px] text-gray-500 border-b border-border-line items-center bg-[#0d1117]">
         <span>SYMBOL / QTY</span>
-        <span>UNREALIZED</span>
+        <span :title="`市值與占總持股比例（美股以 USD/TWD ${fx} 換算）`">VALUE / WEIGHT</span>
       </div>
       <div class="flex-1 overflow-y-auto custom-scrollbar pb-10">
         <div v-for="pos in portfolioStore.positions" :key="pos.symbol" 
@@ -167,11 +187,12 @@ const deleteTrade = async (id) => {
             </div>
           </div>
           <div class="text-right">
-            <div class="text-sm font-mono font-bold" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">
-              {{ pos.unrealized > 0 ? '+' : '' }}{{ pos.unrealized.toLocaleString() }}
+            <div class="text-sm font-mono font-bold text-white" :title="`市值 = ${pos.shares.toLocaleString()} × ${pos.last_price}`">
+              {{ fmtMoney(pos.market_value, pos.currency) }}<span v-if="pos.price_estimated" class="text-yellow-500" title="沒有報價，以成本估算">?</span>
             </div>
-            <div class="text-[9px] font-mono opacity-50" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">
-               {{ pos.unrealized_pct.toFixed(2) }}%{{ pos.price_estimated ? ' (est.)' : '' }}
+            <div class="text-[10px] font-mono text-gray-500">{{ weight(pos).toFixed(1) }}%</div>
+            <div class="text-[10px] font-mono" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">
+              {{ signed(pos.unrealized, pos.currency) }} ({{ pos.unrealized_pct >= 0 ? '+' : '' }}{{ pos.unrealized_pct.toFixed(2) }}%)
             </div>
           </div>
         </div>
