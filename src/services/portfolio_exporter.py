@@ -2,23 +2,42 @@ import os
 import json
 import base64
 import threading
+import time
 import requests
 from loguru import logger
 from src.domain.ledger import replay
 from src.domain.symbols import is_tw, yf_ticker
 
 
+# Optional: symbol -> trailing stop dict (domain.risk.trailing_stop). Set by the server so the
+# export can carry stop lines; tests and offline use leave it unset.
+stop_lookup = None
+
+
 def build_portfolio_json(app_state: dict) -> dict:
-    """{"portfolio": [...]} as consumed by the external portfolio_notify.py - keep the shape."""
+    """{"portfolio": [...]} as consumed by the external portfolio_notify.py. The four original
+    keys keep their shape; `stop_price` / `stop_kind` / `stop_alert` are extra keys older
+    notifiers ignore. Only the stop line and its triggered flag are exported (not the distance),
+    so the payload changes when the line moves or is crossed, not on every tick."""
     ledger = replay(app_state.get("trades", []))
+    stops = {}
+    if stop_lookup is not None:
+        try:
+            stops = stop_lookup(app_state, list(ledger.open_positions())) or {}
+        except Exception as e:
+            logger.warning(f"Stops unavailable for export, exporting holdings only: {e}")
     items = []
     for sym, pos in ledger.open_positions().items():
-        items.append({
+        item = {
             "symbol": yf_ticker(sym),
             "market": "TW" if is_tw(sym) else "US",
             "quantity": int(pos.shares),
             "cost_basis": round(pos.avg_cost, 2),
-        })
+        }
+        stop = stops.get(sym)
+        if stop:
+            item.update(stop_price=round(stop["stop_price"], 2), stop_kind=stop["kind"], stop_alert=bool(stop["triggered"]))
+        items.append(item)
     return {"portfolio": items}
 
 
@@ -37,9 +56,9 @@ def _resolve_targets(app_state: dict) -> dict:
     }
 
 
-def trigger_portfolio_export(app_state: dict) -> bool:
+def trigger_portfolio_export(app_state: dict, portfolio_json: dict = None) -> bool:
     """Synchronously export holdings to every configured target. Returns True if all succeeded."""
-    portfolio_json = build_portfolio_json(app_state)
+    portfolio_json = portfolio_json if portfolio_json is not None else build_portfolio_json(app_state)
     t = _resolve_targets(app_state)
     logger.info(f"Exporting {len(portfolio_json['portfolio'])} holdings via {t['methods']}")
     ok = True
@@ -59,12 +78,12 @@ def trigger_portfolio_export(app_state: dict) -> bool:
     return ok
 
 
-def _delivery_key(app_state: dict) -> str:
-    """Holdings plus target identity (no secrets), so a new or changed target is delivered
+def _delivery_key(app_state: dict, payload: dict) -> str:
+    """Payload plus target identity (no secrets), so a new or changed target is delivered
     even when the holdings did not change."""
     t = _resolve_targets(app_state)
     targets = [t["methods"], t["gist_id"], t["repo"], t["repo_path"], t["local_path"]]
-    return json.dumps([build_portfolio_json(app_state), targets], sort_keys=True)
+    return json.dumps([payload, targets], sort_keys=True)
 
 
 class ExportWorker:
@@ -78,7 +97,8 @@ class ExportWorker:
     host that is offline, behind, or in conflict never publishes holdings the other host has
     already superseded. While not ready the newest snapshot waits; `poke()` re-checks."""
 
-    def __init__(self, export_fn=trigger_portfolio_export, ready=lambda: True, retry_base=30, retry_max=1800):
+    def __init__(self, export_fn=trigger_portfolio_export, ready=lambda: True, retry_base=30, retry_max=1800,
+                 refresh_seconds=None):
         self._export_fn = export_fn
         self._ready = ready
         self._cond = threading.Condition()
@@ -87,13 +107,26 @@ class ExportWorker:
         self._last_key = None
         self._retry_base, self._retry_max = retry_base, retry_max
         self.status = {"state": "idle", "error": None, "revision": None}
+        self._last_state = None
         threading.Thread(target=self._run, name="portfolio-export", daemon=True).start()
+        if refresh_seconds:
+            # Re-evaluate the last state periodically: stop lines move with prices even when
+            # nothing is saved. Unchanged payloads are not re-sent.
+            def tick():
+                while True:
+                    time.sleep(refresh_seconds)
+                    with self._cond:
+                        if self._last_state is not None and self._pending is None:
+                            self._pending = (self._latest_rev, self._last_state)
+                            self._cond.notify()
+            threading.Thread(target=tick, name="portfolio-export-refresh", daemon=True).start()
 
     def submit(self, revision: int, app_state: dict):
         with self._cond:
             if revision <= self._latest_rev:
                 return
             self._latest_rev = revision
+            self._last_state = app_state
             self._pending = (revision, app_state)
             self._cond.notify()
 
@@ -132,10 +165,11 @@ class ExportWorker:
             self.status.update(state="disabled", error=None, revision=revision)
             self._done(revision)
             return None
-        key = _delivery_key(state)
+        payload = build_portfolio_json(state)
+        key = _delivery_key(state, payload)
         if key != self._last_key:
             self.status.update(state="running", error=None)
-            if not self._export_fn(state):
+            if not self._export_fn(state, payload):
                 self.status.update(state="failed", error="see server.log; retrying")
                 return min((delay or self._retry_base) * 2, self._retry_max)
             self._last_key = key

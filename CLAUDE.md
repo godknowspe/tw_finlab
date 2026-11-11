@@ -64,6 +64,11 @@ Both report through `sync` in `/api/portfolio`. The export JSON `{"portfolio": [
 
 Shioaji (`src/api/shioaji_api.py`) targets SDK 1.7.x: fills are `trade.status.deals`, deal quantity is lots for Common orders and shares for odd lots, positions are fetched with `unit=Share`. Synced trades carry `source_trade_id` for dedup.
 
+### Risk tools (`src/domain/risk.py`, `src/domain/dip_buying.py`)
+- Trailing stop per position: highest close of the last 20 sessions × (1 − 2.5 × ATR(14)%), or a user percentage in `settings.stop_pct[symbol]` (`PUT /api/stops/{symbol}`). Checked against the live quote. ETFs (yfinance `quoteType`, cached in `app_config` as `qtype_<symbol>` by `instrument_service.is_etf`) get a `warning`, stocks a `stop_loss`. The Gist export carries `stop_price`/`stop_kind`/`stop_alert` as extra keys; the export worker re-evaluates every 15 min so a breach is published without a save. `~/code/portfolio_notify.py` (not in any repo) prints the line per holding and lists breaches at the top, checking against the price it fetches itself.
+- `/api/round-trips`: a trip starts at any sell, accumulates later sells until the same number of shares is bought back (extra shares are a new buy); not bought back within 60 sessions = `reduction`; unfinished = `open`, marked at the last close. Result vs holding includes recorded fees, or TW estimates (0.1425% each side, 0.3%/0.1% tax) when none were entered.
+- `/api/dip-backtest/{symbol}`: same monthly money for all strategies on dividend-adjusted closes fetched directly (not the raw-price cache); compares invest-now, dip buying from a reserve, and idle reserve.
+
 ### Backtest
 `src/engine/backtest.py`: single-symbol, long-only; a signal on bar i fills at bar i+1 open; TW costs (0.1425% min NT$20, 0.3% tax / 0.1% for `00*` ETFs, 1000-share lots, NT$1M) vs US (no costs, 1-share lots, US$30k); returns are measured from initial cash. Strategies register by name in `STRATEGIES` in `src/engine/strategies.py`.
 

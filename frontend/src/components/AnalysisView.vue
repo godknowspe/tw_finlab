@@ -1,6 +1,11 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue';
 import axios from 'axios';
+import RoundTrips from './RoundTrips.vue';
+import DipBacktest from './DipBacktest.vue';
+
+const view = ref('buys');
+const VIEWS = [['buys', '每筆買入'], ['trips', '來回交易'], ['dip', '下跌加碼回測']];
 
 const buys = ref([]);
 const horizons = ref([5, 20, 60]);
@@ -86,8 +91,18 @@ defineExpose({ refresh: fetchData });
         📊 Performance Analysis
         <span v-if="isLoading" class="text-[10px] text-blue-400 animate-pulse font-normal">Loading data...</span>
       </h2>
-      <button @click="fetchData" class="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-400 px-3 py-1 rounded border border-gray-700 uppercase">Refresh</button>
+      <div class="flex items-center gap-2">
+        <div class="flex bg-gray-900 rounded p-0.5 border border-gray-700 text-[10px]">
+          <button v-for="[k, label] in VIEWS" :key="k" @click="view = k"
+                  :class="view === k ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'" class="px-3 py-1 rounded">{{ label }}</button>
+        </div>
+        <button v-if="view === 'buys'" @click="fetchData" class="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-400 px-3 py-1 rounded border border-gray-700 uppercase">Refresh</button>
+      </div>
     </div>
+
+    <RoundTrips v-if="view === 'trips'" />
+    <DipBacktest v-else-if="view === 'dip'" />
+    <template v-else>
 
     <div class="text-[11px] text-gray-500 leading-relaxed bg-[#161b22] border border-border-line rounded-lg px-4 py-3">
       每一筆<b class="text-gray-300">買入</b>分開評價。
@@ -202,5 +217,6 @@ defineExpose({ refresh: fetchData });
         * window not fully elapsed yet. AVG COST: green = this buy lowered the position's average cost.
       </div>
     </div>
+    </template>
   </div>
 </template>

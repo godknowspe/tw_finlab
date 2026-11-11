@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -108,6 +108,16 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     usd_twd_rate: float = Field(default=32.5, gt=0, allow_inf_nan=False)
+    # Per-symbol trailing stop percentage chosen by the user; absent = volatility-based default.
+    stop_pct: Dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("stop_pct")
+    @classmethod
+    def _stop_pct(cls, v):
+        for sym, pct in v.items():
+            if not (0 < pct < 100):
+                raise ValueError(f"stop percentage for {sym} must be between 0 and 100")
+        return {canonical_symbol(k): float(p) for k, p in v.items()}
 
 
 class AppState(BaseModel):

@@ -19,12 +19,21 @@ def _isolate_portfolio_export(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _offline_fx(monkeypatch):
-    """The live USD/TWD lookup must not reach yfinance from tests; act as if it is offline."""
+def _offline_market_data(monkeypatch):
+    """Tests never reach yfinance: quotes, kbars, FX and instrument lookups all fail as if
+    offline. Tests that need prices pass them in or monkeypatch the service."""
+    import yfinance
     import src.services.fx_service as fx
     monkeypatch.setattr(fx, "_cache", None)
 
     class _Offline:
         def __init__(self, *a, **k):
             raise RuntimeError("no network in tests")
-    monkeypatch.setattr(fx.yf, "Ticker", _Offline)
+
+    def _offline_download(*a, **k):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(yfinance, "Ticker", _Offline)
+    monkeypatch.setattr(yfinance, "download", _offline_download)
+    # Never refetch in tests: serve whatever the (test) cache holds.
+    monkeypatch.setattr("src.services.market_data.MarketDataService.refresh", lambda self, *a, **k: False)
+    monkeypatch.setattr("src.services.portfolio_exporter.stop_lookup", None)

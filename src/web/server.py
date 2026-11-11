@@ -15,6 +15,8 @@ yf_cache_dir = os.path.join(tempfile.gettempdir(), "yfinance_cache")
 os.makedirs(yf_cache_dir, exist_ok=True)
 yf.set_tz_cache_location(yf_cache_dir)
 
+from src.domain.risk import trailing_stop
+from src.services import portfolio_exporter
 from src.services.portfolio_exporter import ExportWorker
 from src.services.state_store import StateStore
 from src.services.state_sync import GitStateSync
@@ -23,6 +25,28 @@ from src.web.routes_market import router as market_router
 from src.web.routes_portfolio import router as portfolio_router
 
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
+
+
+def _export_stops(state, symbols):
+    """Trailing stops for the holdings export, computed with the same rule as the UI."""
+    from src.data.models import get_engine, get_session
+    from src.services.config_service import ConfigService
+    from src.services.instrument_service import is_etf
+    from src.services.market_data import MarketDataService
+    from src.services.quote_service import get_quotes
+    db = get_session(get_engine())
+    try:
+        market, config = MarketDataService(db), ConfigService(db)
+        quotes = get_quotes(symbols)
+        custom = state["settings"].get("stop_pct", {})
+        out = {}
+        for sym in symbols:
+            bars = market.get_bars(sym, "1d")
+            if not bars.empty:
+                out[sym] = trailing_stop(bars, is_etf(sym, config), custom.get(sym), (quotes.get(sym) or (None,))[0])
+        return out
+    finally:
+        db.close()
 
 
 def _build_state() -> StateStore:
@@ -39,7 +63,7 @@ def _build_state() -> StateStore:
     # setup whose git lookup fails must not promote itself to publisher.
     role = os.environ.get("TW_FINLAB_EXPORT")
     publisher = role == "1" if (explicit or role is not None) else True
-    exporter = ExportWorker(ready=lambda: publisher and sync.in_sync)
+    exporter = ExportWorker(ready=lambda: publisher and sync.in_sync, refresh_seconds=900)
     if not publisher:
         exporter.status.update(state="off", error="this host does not publish (TW_FINLAB_EXPORT is not 1)")
 
@@ -49,6 +73,7 @@ def _build_state() -> StateStore:
 
     # The store takes the owner lock first, then runs the pull, then loads.
     store = StateStore(explicit, on_saved=on_saved, before_load=sync.startup_pull)
+    portfolio_exporter.stop_lookup = _export_stops
     sync.on_synced = exporter.poke
     sync.start(store)
     deps._status.update(git=lambda: sync.status, export=lambda: exporter.status)

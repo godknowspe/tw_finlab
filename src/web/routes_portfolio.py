@@ -1,17 +1,21 @@
+import datetime
 import uuid
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.domain.dip_buying import compare
 from src.domain.ledger import replay, trade_sort_key, validate_trades
+from src.domain.risk import REBUY_WINDOW, round_trips, trailing_stop
 from src.domain.symbols import canonical_symbol, currency_of, market_of
 from src.domain.valuation import historical_roi, value_positions
 from src.schemas.state import normalize_timestamp
 from src.services.config_service import ConfigService
 from src.services.fx_service import FX_SYMBOL, get_usd_twd
+from src.services.instrument_service import adjusted_closes, is_etf
 from src.services.market_data import MarketDataService
 from src.services.quote_service import get_quotes, shioaji_api_if_enabled
 from src.services.state_store import StateConflictError
@@ -68,6 +72,7 @@ def get_portfolio(db: Session = Depends(deps.get_db)):
     fx, fx_live = get_usd_twd(_configured_fx(s))
     valued = value_positions(ledger, {k: v[0] for k, v in quotes.items()}, fx)
     valued["summary"]["usd_twd_live"] = fx_live
+    attach_stops(valued["positions"], s, MarketDataService(db), ConfigService(db))
 
     watchlist = []
     for item in s["watchlist"]:
@@ -87,6 +92,69 @@ def get_portfolio(db: Session = Depends(deps.get_db)):
         "sync": deps.sync_status(),
         "revision": version,
     }
+
+
+def attach_stops(positions, state, market, config):
+    """Add a trailing stop to each position: a stop-loss for stocks, a warning for ETFs."""
+    custom = state["settings"].get("stop_pct", {})
+    for p in positions:
+        try:
+            bars = market.get_bars(p["symbol"], "1d")
+            p["stop"] = trailing_stop(bars, is_etf(p["symbol"], config), custom.get(p["symbol"]),
+                                      None if p["price_estimated"] else p["last_price"]) if not bars.empty else None
+        except Exception as e:
+            logger.warning(f"Stop for {p['symbol']} unavailable: {e}")
+            p["stop"] = None
+
+
+class StopIn(BaseModel):
+    pct: Optional[float] = Field(default=None, gt=0, lt=100)   # None = back to the volatility default
+
+
+@router.put("/stops/{symbol}")
+def set_stop(symbol: str, item: StopIn):
+    sym = canonical_symbol(symbol)
+
+    def apply(s):
+        stops = dict(s["settings"].get("stop_pct", {}))
+        if item.pct is None:
+            stops.pop(sym, None)
+        else:
+            stops[sym] = item.pct
+        s["settings"]["stop_pct"] = stops
+    mutate(apply)
+    return {"status": "success"}
+
+
+@router.get("/round-trips")
+def get_round_trips(db: Session = Depends(deps.get_db)):
+    s = deps.state().snapshot()
+    market = MarketDataService(db)
+    syms = {t["symbol"] for t in s["trades"] if t["action"] == "SELL"}
+    closes = {sym: market.get_bars(sym, "1d")["close"] for sym in syms}
+    trips = round_trips(s["trades"], closes)
+    totals = {}
+    for r in trips:
+        if r["status"] == "closed":
+            tot = totals.setdefault(r["currency"], {"closed": 0, "won": 0, "vs_hold": 0.0, "fees": 0.0})
+            tot["closed"] += 1
+            tot["won"] += r["vs_hold"] > 0
+            tot["vs_hold"] = round(tot["vs_hold"] + r["vs_hold"], 2)
+            tot["fees"] = round(tot["fees"] + r["fees"], 2)
+    return {"window": REBUY_WINDOW, "trips": trips, "totals": totals}
+
+
+@router.get("/dip-backtest/{symbol}")
+def dip_backtest(symbol: str, trigger_pct: float = 10.0, add_pct: Optional[float] = 10.0,
+                 monthly: float = 12000, reserve: float = 2000, years: int = 10):
+    """add_pct: share of current holdings value to add per trigger; omit or 0 = use the whole reserve."""
+    if not (0 < trigger_pct < 100) or not (0 <= reserve <= monthly) or monthly <= 0 or not (1 <= years <= 30):
+        raise HTTPException(status_code=422, detail="trigger 0-100%, 0 <= reserve <= monthly, years 1-30")
+    start = (datetime.date.today() - datetime.timedelta(days=int(365.25 * years))).isoformat()
+    px = adjusted_closes(canonical_symbol(symbol), start)
+    if px is None or len(px) < 60:
+        raise HTTPException(status_code=404, detail="not enough price history")
+    return compare(px, monthly, reserve, trigger_pct / 100, (add_pct / 100) if add_pct else None)
 
 
 @router.get("/revision")

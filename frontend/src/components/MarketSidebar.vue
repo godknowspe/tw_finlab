@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import axios from 'axios';
 import { useMarketStore } from '@/stores/market';
 import { usePortfolioStore, apiError } from '@/stores/portfolio';
 import { Plus, X, TrendingUp, Briefcase, History, RefreshCw, Trash2 } from 'lucide-vue-next';
@@ -26,6 +27,30 @@ const positionGroups = computed(() => [['TW', 'TWD'], ['US', 'USD']]
     return { market, currency, positions, value, weight: holdingsTwd.value ? twd / holdingsTwd.value * 100 : 0 };
   })
   .filter(g => g.positions.length));
+const stopBorder = (pos) => {
+  if (pos.stop?.triggered) return pos.stop.kind === 'warning' ? 'border-l-2 border-yellow-500' : 'border-l-2 border-red-500';
+  return marketStore.currentSymbol === pos.symbol ? 'border-l-2 border-blue-500' : 'border-l-2 border-transparent';
+};
+const stopTone = (stop) => {
+  if (stop.triggered) return stop.kind === 'warning' ? 'bg-yellow-900/30 text-yellow-400' : 'bg-red-900/40 text-red-400';
+  if (stop.distance_pct < 2) return 'text-yellow-500/80';
+  return 'text-gray-500';
+};
+const editStop = async (pos) => {
+  const input = prompt(
+    `${pos.symbol} ${pos.stop.kind === 'warning' ? '警示' : '停損'}百分比（從近 20 日最高收盤往下）\n` +
+    `依波動率建議：${pos.stop.suggested_pct}%。留空 = 使用建議值。`,
+    pos.stop.custom ? String(pos.stop.stop_pct) : '');
+  if (input === null) return;
+  const pct = input.trim() === '' ? null : Number(input);
+  if (pct !== null && !(pct > 0 && pct < 100)) return alert('請輸入 0 到 100 之間的數字');
+  try {
+    await axios.put(`/api/stops/${encodeURIComponent(pos.symbol)}`, { pct });
+    await portfolioStore.fetchPortfolio();
+  } catch (e) {
+    alert('設定失敗: ' + apiError(e));
+  }
+};
 const fmtMoney = (v, cur) => v.toLocaleString(undefined, { maximumFractionDigits: cur === 'USD' ? 2 : 0, minimumFractionDigits: cur === 'USD' ? 2 : 0 });
 const signed = (v, cur) => (v > 0 ? '+' : '') + fmtMoney(v, cur);
 const isSyncing = ref(false);
@@ -193,8 +218,8 @@ const deleteTrade = async (id) => {
             </span>
           </div>
           <div v-for="pos in group.positions" :key="pos.symbol"
-               class="flex justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer"
-               :class="marketStore.currentSymbol === pos.symbol ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'border-l-2 border-transparent'"
+               class="flex flex-wrap justify-between items-center px-4 py-3 border-b border-white/5 hover:bg-gray-800/50 cursor-pointer"
+               :class="[marketStore.currentSymbol === pos.symbol ? 'bg-blue-900/20' : '', stopBorder(pos)]"
                @click="marketStore.setCurrentSymbol(pos.symbol)">
             <div>
               <div class="font-bold text-white text-sm">{{ pos.symbol }}</div>
@@ -212,6 +237,14 @@ const deleteTrade = async (id) => {
               <div class="text-[10px] font-mono" :class="pos.unrealized >= 0 ? 'text-text-green' : 'text-text-red'">
                 {{ signed(pos.unrealized, pos.currency) }} ({{ pos.unrealized_pct >= 0 ? '+' : '' }}{{ pos.unrealized_pct.toFixed(2) }}%)
               </div>
+            </div>
+            <div v-if="pos.stop" class="basis-full mt-1.5 flex justify-between items-center text-[10px] font-mono rounded px-1.5 py-0.5"
+                 :class="stopTone(pos.stop)" @click.stop="editStop(pos)"
+                 :title="`${pos.stop.kind === 'warning' ? 'ETF 警示線（不建議停損賣出）' : '停損線'}：近 20 日最高收盤 ${pos.stop.ref_high} 往下 ${pos.stop.stop_pct}%` +
+                         `${pos.stop.custom ? '（自訂）' : '（依波動率 2.5×ATR 建議）'}。點一下可修改。`">
+              <span>{{ pos.stop.kind === 'warning' ? '警示' : '停損' }} {{ pos.stop.stop_price.toFixed(2) }}
+                <span class="opacity-60">({{ pos.stop.stop_pct.toFixed(1) }}%{{ pos.stop.custom ? '*' : '' }})</span></span>
+              <span>{{ pos.stop.triggered ? (pos.stop.kind === 'warning' ? '⚠ 已跌破' : '⛔ 已觸發') : '距 ' + pos.stop.distance_pct.toFixed(1) + '%' }}</span>
             </div>
           </div>
         </template>

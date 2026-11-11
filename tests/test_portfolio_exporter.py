@@ -138,14 +138,18 @@ def test_export_worker_drops_older_revision_and_skips_unchanged():
     from src.services.portfolio_exporter import ExportWorker
     sent, gate = [], threading.Event()
 
-    def fake_export(state):
+    def fake_export(state, payload=None):
         gate.wait(2)
         sent.append(len(state["trades"]))
         return True
 
     w = ExportWorker(fake_export)
     w.submit(1, _worker_state(1))
-    import time; time.sleep(0.1)       # revision 1 is in flight
+    import time
+    for _ in range(100):               # wait until revision 1 is actually in flight
+        if w.status["state"] == "running":
+            break
+        time.sleep(0.01)
     w.submit(3, _worker_state(3))
     w.submit(2, _worker_state(2))      # arrives late with an older revision: dropped
     gate.set()
@@ -160,7 +164,7 @@ def test_export_worker_delivers_to_new_target_and_retries_failures():
     from src.services.portfolio_exporter import ExportWorker
     calls = []
 
-    def flaky(state):
+    def flaky(state, payload=None):
         calls.append(state["settings"]["portfolio_export"]["methods"])
         return len(calls) != 2          # second delivery fails once
 
@@ -179,7 +183,7 @@ def test_export_worker_delivers_to_new_target_and_retries_failures():
 def test_export_worker_waits_until_ready_and_then_delivers_latest():
     from src.services.portfolio_exporter import ExportWorker
     calls, ready = [], {"v": False}
-    w = ExportWorker(lambda s: calls.append(len(s["trades"])) or True, ready=lambda: ready["v"])
+    w = ExportWorker(lambda s, p=None: calls.append(len(s["trades"])) or True, ready=lambda: ready["v"])
     w.submit(1, _worker_state(1))
     w.submit(2, _worker_state(2))
     _drain(w)
@@ -194,7 +198,7 @@ def test_only_the_publisher_host_exports():
     """Two ledger writers must not both PATCH the Gist: an old export could land after a new one."""
     from src.services.portfolio_exporter import ExportWorker
     calls = []
-    non_publisher = ExportWorker(lambda s: calls.append(1) or True, ready=lambda: False)
+    non_publisher = ExportWorker(lambda s, p=None: calls.append(1) or True, ready=lambda: False)
     non_publisher.status.update(state="off")
     non_publisher.submit(1, _worker_state(1))
     _drain(non_publisher)
