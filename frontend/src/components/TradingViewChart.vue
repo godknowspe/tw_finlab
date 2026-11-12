@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch, onUnmounted } from 'vue';
+import { onMounted, ref, watch, onUnmounted, nextTick } from 'vue';
 import { createChart, CrosshairMode } from 'lightweight-charts';
 import { useMarketStore } from '@/stores/market';
 import { usePortfolioStore } from '@/stores/portfolio';
@@ -68,10 +68,119 @@ let equityTWSeries = null;
 let equityUSSeries = null;
 let pnlSeries = null;
 let backtestLineSeries = null;
-let indicatorSeries = {}; 
+let indicatorSeries = {};                 // overlay lines on the main chart (SMA, Bollinger)
 let lastValidData = null;
 let fetchGeneration = 0;
+let rowsByTime = new Map();               // bar time -> API row, for the legend
+let btByTime = new Map();                 // bar time -> backtest equity
+
+// RSI and MACD each live in their own chart under the main one. A chart has a single set of
+// price-axis labels spanning its whole height, so a shared chart cannot give each indicator
+// a correct axis. The charts share the time axis: scrolling or zooming any of them moves all.
+const PANEL_PX = 130;
+const PANEL_ORDER = ['RSI', 'MACD'];
+const activePanels = ref([]);
+const panelEls = {};                      // panel name -> chart container element
+const panelCharts = {};                   // panel name -> chart
+const axisGap = ref({ main: 0, RSI: 0, MACD: 0 });   // px, equalises the price-axis widths
 let resizeObserver = null;
+const observed = new Map();               // element -> chart it sizes
+
+// Content box (excluding the padding used for axis alignment), the same size the observer reports.
+const contentSize = (el) => {
+  const cs = getComputedStyle(el);
+  return {
+    width: Math.max(1, el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)),
+    height: Math.max(1, el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)),
+  };
+};
+const chartOptions = (el, extra = {}) => ({
+  layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9', fontSize: 11, fontFamily: 'Inter, system-ui, sans-serif' },
+  grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
+  crosshair: { mode: CrosshairMode.Normal, vertLine: { labelBackgroundColor: '#1f6feb' }, horzLine: { labelBackgroundColor: '#1f6feb' } },
+  timeScale: { borderColor: '#30363d', timeVisible: true },
+  rightPriceScale: { borderColor: '#30363d', autoScale: true },
+  handleScroll: true,
+  handleScale: true,
+  ...contentSize(el),
+  ...extra,
+});
+const observe = (el, c) => {
+  observed.set(el, c);
+  resizeObserver.observe(el);
+};
+const allCharts = () => [chart, ...activePanels.value.map(n => panelCharts[n])].filter(Boolean);
+
+// Whitespace for missing values keeps every chart on the same set of time points, so logical
+// indices (used to sync the visible range) mean the same bar in each.
+const lineData = (data, key) => data.map(d => (d[key] === null || d[key] === undefined ? { time: d.time } : { time: d.time, value: d[key] }));
+
+let syncing = false;
+const syncRange = (source) => (range) => {
+  if (!range || syncing) return;
+  syncing = true;
+  try { allCharts().forEach(c => { if (c !== source) c.timeScale().setVisibleLogicalRange(range); }); }
+  finally { syncing = false; }
+  scheduleAlign();
+};
+
+// Price-axis labels of different width would shift the plot areas sideways. Give the charts
+// with narrower axes a right margin so every plot area spans the same pixels.
+let alignQueued = false;
+const scheduleAlign = () => {
+  if (alignQueued) return;
+  alignQueued = true;
+  requestAnimationFrame(() => {
+    alignQueued = false;
+    if (!chart) return;
+    const widths = { main: chart.priceScale('right').width() };
+    activePanels.value.forEach(n => { widths[n] = panelCharts[n]?.priceScale('right').width() || 0; });
+    const max = Math.max(...Object.values(widths));
+    const next = { main: max - widths.main, RSI: 0, MACD: 0 };
+    activePanels.value.forEach(n => { next[n] = max - widths[n]; });
+    const cur = axisGap.value;
+    if (['main', 'RSI', 'MACD'].some(k => Math.abs((cur[k] || 0) - next[k]) >= 1)) axisGap.value = next;
+  });
+};
+
+const destroyPanels = () => {
+  for (const [name, c] of Object.entries(panelCharts)) {
+    const el = panelEls[name];
+    if (el) { resizeObserver?.unobserve(el); observed.delete(el); }
+    c.remove();
+    delete panelCharts[name];
+  }
+  activePanels.value = [];
+};
+
+const buildPanels = async (names, data, colors) => {
+  activePanels.value = names;
+  await nextTick();
+  names.forEach((name, i) => {
+    const el = panelEls[name];
+    if (!el) return;
+    const last = i === names.length - 1;
+    const c = createChart(el, chartOptions(el, { timeScale: { borderColor: '#30363d', timeVisible: true, visible: last } }));
+    panelCharts[name] = c;
+    observe(el, c);
+    c.subscribeCrosshairMove(onCrosshair);
+    c.timeScale().subscribeVisibleLogicalRangeChange(syncRange(c));
+    const line = (key, color, width = 1, extra = {}) => {
+      const sr = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, ...extra });
+      sr.setData(lineData(data, key));
+      return sr;
+    };
+    if (name === 'RSI') {
+      c.priceScale('right').applyOptions({ scaleMargins: { top: 0.06, bottom: 0.06 } });
+      const rsi = line('rsi', colors.RSI, 2, { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
+      [70, 30].forEach(price => rsi.createPriceLine({ price, color: '#6b7280', lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: '' }));
+    } else {
+      const macd = line('macd', colors.MACD);
+      line('signal', '#FF6D00');
+      macd.createPriceLine({ price: 0, color: '#6b7280', lineStyle: 2, lineWidth: 1, axisLabelVisible: false, title: '' });
+    }
+  });
+};
 
 // Bar times from the API: daily+ are 'YYYY-MM-DD'; intraday are exchange wall-clock time sent
 // as if UTC. Trade timestamps are exchange wall-clock too, so compare both as UTC.
@@ -90,40 +199,69 @@ const barFor = (data, ms) => {
   return ms < data[lo].end * 1000 ? data[lo] : null;
 };
 
+const timeLabel = (t) => {
+  if (typeof t === 'string') return t;
+  if (typeof t === 'number') return new Date(t * 1000).toISOString().slice(0, 16).replace('T', ' ');
+  if (t?.year) return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+  return '';
+};
+const keyOf = (t) => (typeof t === 'object' && t?.year ? timeLabel(t) : t);
+const f2 = (v) => (v === null || v === undefined ? undefined : v.toFixed(2));
+
+// One legend for every chart: any crosshair move looks the bar up by time in the API rows.
+const legendFor = (row) => {
+  const indicators = {};
+  for (const [label, key] of [['SMA5', 'sma5'], ['SMA10', 'sma10'], ['SMA20', 'sma20'], ['BB Up', 'bb_up'], ['BB Mid', 'bb_mid'], ['BB Low', 'bb_low'],
+                              ['RSI', 'rsi'], ['MACD', 'macd'], ['Signal', 'signal']]) {
+    const wanted = label.startsWith('BB') ? marketStore.selectedIndicators.includes('BB')
+      : label === 'Signal' ? marketStore.selectedIndicators.includes('MACD') : marketStore.selectedIndicators.includes(label);
+    if (wanted && f2(row[key]) !== undefined) indicators[label] = f2(row[key]);
+  }
+  if (pnlSeries && row.total_pnl !== null && row.total_pnl !== undefined) indicators['PnL'] = row.total_pnl.toFixed(0);
+  const bt = btByTime.get(row.time);
+  if (backtestLineSeries && bt !== undefined) indicators['BT Equity'] = bt.toFixed(0);
+  return {
+    time: timeLabel(row.time), open: f2(row.open), high: f2(row.high), low: f2(row.low), close: f2(row.close),
+    v: row.value === null || row.value === undefined ? '--' : (row.value / 1000).toFixed(0) + 'K', indicators,
+  };
+};
+
+const onCrosshair = (param) => {
+  if (!param || !param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
+    if (lastValidData) legendData.value = lastValidData;
+    return;
+  }
+  if (props.mode === 'equity') {
+    if (!param.seriesPrices) return;
+    const newLegend = { time: timeLabel(param.time), indicators: {} };
+    for (const [label, series] of [['Total ROI', equityTotalSeries], ['TW ROI', equityTWSeries], ['US ROI', equityUSSeries]]) {
+      const val = series && param.seriesPrices.get(series);
+      if (val !== undefined && val !== null) newLegend.indicators[label] = val.toFixed(2) + '%';
+    }
+    legendData.value = newLegend;
+    return;
+  }
+  const row = rowsByTime.get(keyOf(param.time));
+  if (row) legendData.value = legendFor(row);
+};
+
 const initChart = () => {
   if (!chartContainer.value) return;
-  
-  chart = createChart(chartContainer.value, {
-    layout: {
-      background: { type: 'solid', color: '#0d1117' },
-      textColor: '#c9d1d9',
-      fontSize: 11,
-      fontFamily: 'Inter, system-ui, sans-serif',
-    },
-    grid: {
-      vertLines: { color: '#30363d' },
-      horzLines: { color: '#30363d' },
-    },
-    crosshair: {
-      mode: CrosshairMode.Normal,
-      vertLine: { labelBackgroundColor: '#1f6feb' },
-      horzLine: { labelBackgroundColor: '#1f6feb' },
-    },
-    timeScale: { borderColor: '#30363d', timeVisible: true },
-    rightPriceScale: { borderColor: '#30363d', autoScale: true },
-    leftPriceScale: { borderColor: '#30363d', visible: false },
-    handleScroll: true,
-    handleScale: true,
-    width: chartContainer.value.clientWidth,
-    height: chartContainer.value.clientHeight,
-  });
 
-  // lightweight-charts 3.x has no autoSize option; follow the container size ourselves.
-  resizeObserver = new ResizeObserver(([entry]) => {
-    const { width, height } = entry.contentRect;
-    if (chart && width > 0 && height > 0) chart.resize(width, height);
+  chart = createChart(chartContainer.value, chartOptions(chartContainer.value, {
+    leftPriceScale: { borderColor: '#30363d', visible: false },
+  }));
+
+  // lightweight-charts 3.x has no autoSize option; follow the container sizes ourselves.
+  resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const c = observed.get(entry.target);
+      const { width, height } = entry.contentRect;
+      if (c && width > 0 && height > 0) c.resize(width, height);
+    }
+    scheduleAlign();
   });
-  resizeObserver.observe(chartContainer.value);
+  observe(chartContainer.value, chart);
 
   candleSeries = chart.addCandlestickSeries({
     upColor: '#3fb950', downColor: '#f85149', borderVisible: false,
@@ -131,77 +269,20 @@ const initChart = () => {
   });
 
   volumeSeries = chart.addHistogramSeries({
-    color: '#238636', priceFormat: { type: 'volume' }, priceScaleId: '',
+    color: '#238636', priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false,
   });
+  volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
-  volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.8, bottom: 0 },
-  });
+  chart.subscribeCrosshairMove(onCrosshair);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRange(chart));
+};
 
-  chart.subscribeCrosshairMove(param => {
-    if (!param || !param.time || param.point.x < 0 || param.point.y < 0) {
-      if (lastValidData) legendData.value = lastValidData;
-      return;
-    }
-    
-    if (!param.seriesPrices) return;
-
-    if (props.mode === 'equity') {
-      let timeStr = '';
-      if (typeof param.time === 'string') timeStr = param.time;
-      else if (typeof param.time === 'number') timeStr = new Date(param.time * 1000).toLocaleDateString();
-      else if (param.time?.year) timeStr = `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`;
-
-      const newLegend = { time: timeStr, indicators: {} };
-      if (equityTotalSeries) {
-        const val = param.seriesPrices.get(equityTotalSeries);
-        if (val !== undefined && val !== null) newLegend.indicators['Total ROI'] = val.toFixed(2) + '%';
-      }
-      if (equityTWSeries) {
-        const val = param.seriesPrices.get(equityTWSeries);
-        if (val !== undefined && val !== null) newLegend.indicators['TW ROI'] = val.toFixed(2) + '%';
-      }
-      if (equityUSSeries) {
-        const val = param.seriesPrices.get(equityUSSeries);
-        if (val !== undefined && val !== null) newLegend.indicators['US ROI'] = val.toFixed(2) + '%';
-      }
-      legendData.value = newLegend;
-      return;
-    }
-
-    const mainData = param.seriesPrices.get(candleSeries);
-    if (mainData) {
-      let timeStr = '';
-      if (typeof param.time === 'string') timeStr = param.time;
-      else if (typeof param.time === 'number') timeStr = new Date(param.time * 1000).toLocaleDateString();
-      else if (param.time.year) timeStr = `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`;
-
-      const newLegend = {
-        time: timeStr, open: mainData.open?.toFixed(2), high: mainData.high?.toFixed(2),
-        low: mainData.low?.toFixed(2), close: mainData.close?.toFixed(2), indicators: {}
-      };
-
-      const vol = param.seriesPrices.get(volumeSeries);
-      if (vol !== undefined) newLegend.v = (vol / 1000).toFixed(0) + 'K';
-
-      for (const [id, series] of Object.entries(indicatorSeries)) {
-        const val = param.seriesPrices.get(series);
-        if (val !== undefined && val !== null) newLegend.indicators[id] = val.toFixed(2);
-      }
-      
-      if (pnlSeries) {
-        const pVal = param.seriesPrices.get(pnlSeries);
-        if (pVal !== undefined && pVal !== null) newLegend.indicators['PnL'] = pVal.toFixed(0);
-      }
-      
-      if (backtestLineSeries) {
-        const bVal = param.seriesPrices.get(backtestLineSeries);
-        if (bVal !== undefined && bVal !== null) newLegend.indicators['BT Equity'] = bVal.toFixed(0);
-      }
-
-      legendData.value = newLegend;
-    }
-  });
+// Money-valued lines (PnL, backtest equity) are drawn on an axis-less overlay scale in the top
+// part of the main chart; their value is read from the legend.
+const addMoneySeries = (options) => {
+  const series = chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: false, priceScaleId: 'money', ...options });
+  series.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.6 } });
+  return series;
 };
 
 const clearIndicators = () => {
@@ -209,7 +290,9 @@ const clearIndicators = () => {
   indicatorSeries = {};
   if (pnlSeries) { chart.removeSeries(pnlSeries); pnlSeries = null; }
   if (backtestLineSeries) { chart.removeSeries(backtestLineSeries); backtestLineSeries = null; }
-  chart.applyOptions({ leftPriceScale: { visible: false } });
+  btByTime = new Map();
+  destroyPanels();
+  scheduleAlign();
 };
 
 const fetchData = async () => {
@@ -231,9 +314,16 @@ const fetchData = async () => {
 
       candleSeries.setData(candles);
       volumeSeries.setData(volumes);
-      
+      rowsByTime = new Map(data.map(d => [d.time, d]));
+
       clearIndicators();
       const colors = { SMA5: '#f2c94c', SMA10: '#f2994a', SMA20: '#1f6feb', BB: '#9b51e0', RSI: '#56ccf2', MACD: '#2962FF' };
+
+      const panels = PANEL_ORDER.filter(n => marketStore.selectedIndicators.includes(n) && data[0][n.toLowerCase()] !== undefined);
+      // The date axis is drawn once, under the last chart.
+      chart.applyOptions({ timeScale: { visible: panels.length === 0 } });
+      await buildPanels(panels, data, colors);
+      if (stale()) return;
 
       marketStore.selectedIndicators.forEach(id => {
         const key = id.toLowerCase();
@@ -241,22 +331,14 @@ const fetchData = async () => {
           indicatorSeries['BB Up'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
           indicatorSeries['BB Low'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
           indicatorSeries['BB Mid'] = chart.addLineSeries({ color: '#56ccf2', lineWidth: 1, priceLineVisible: false });
-          indicatorSeries['BB Up'].setData(data.map(d => ({ time: d.time, value: d.bb_up })));
-          indicatorSeries['BB Low'].setData(data.map(d => ({ time: d.time, value: d.bb_low })));
-          indicatorSeries['BB Mid'].setData(data.map(d => ({ time: d.time, value: d.bb_mid })));
-        } else if (id === 'MACD' && data[0].macd !== undefined) {
-          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.75, bottom: 0.05 } } });
-          indicatorSeries['MACD'] = chart.addLineSeries({ color: colors.MACD, lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
-          indicatorSeries['Signal'] = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
-          indicatorSeries['MACD'].setData(data.map(d => ({ time: d.time, value: d.macd })));
-          indicatorSeries['Signal'].setData(data.map(d => ({ time: d.time, value: d.signal })));
-        } else if (id === 'RSI' && data[0].rsi !== undefined) {
-          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.75, bottom: 0.05 } } });
-          indicatorSeries['RSI'] = chart.addLineSeries({ color: colors.RSI, lineWidth: 1, priceScaleId: 'left', priceLineVisible: false });
-          indicatorSeries['RSI'].setData(data.map(d => ({ time: d.time, value: d.rsi })));
+          indicatorSeries['BB Up'].setData(lineData(data, 'bb_up'));
+          indicatorSeries['BB Low'].setData(lineData(data, 'bb_low'));
+          indicatorSeries['BB Mid'].setData(lineData(data, 'bb_mid'));
+        } else if (id === 'MACD' || id === 'RSI') {
+          // drawn in their own charts (buildPanels)
         } else if (data[0][key] !== undefined) {
           indicatorSeries[id] = chart.addLineSeries({ color: colors[id] || '#56ccf2', lineWidth: 1, priceLineVisible: false });
-          indicatorSeries[id].setData(data.map(d => ({ time: d.time, value: d[key] })));
+          indicatorSeries[id].setData(lineData(data, key));
         }
       });
 
@@ -282,9 +364,9 @@ const fetchData = async () => {
 
         
         if (bt.chart_data?.length > 0) {
-          chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
-          backtestLineSeries = chart.addLineSeries({ color: '#f2c94c', lineWidth: 2, priceScaleId: 'left', title: 'BT Equity', priceLineVisible: false });
+          backtestLineSeries = addMoneySeries({ color: '#f2c94c' });
           backtestLineSeries.setData(bt.chart_data);
+          btByTime = new Map(bt.chart_data.map(d => [d.time, d.value]));
         }
       } else {
         
@@ -328,8 +410,7 @@ const fetchData = async () => {
 
         const pnlData = data.filter(d => d.total_pnl !== undefined && d.total_pnl !== null).map(d => ({ time: d.time, value: d.total_pnl }));
         if (pnlData.length > 0) {
-            chart.applyOptions({ leftPriceScale: { visible: true, scaleMargins: { top: 0.1, bottom: 0.7 } } });
-            pnlSeries = chart.addLineSeries({ color: '#ff7eb9', lineWidth: 2, priceScaleId: 'left', title: 'PnL', priceLineVisible: false });
+            pnlSeries = addMoneySeries({ color: '#ff7eb9' });
             pnlSeries.setData(pnlData);
         }
       }
@@ -341,23 +422,13 @@ const fetchData = async () => {
       if (equityTWSeries) { chart.removeSeries(equityTWSeries); equityTWSeries = null; }
       if (equityUSSeries) { chart.removeSeries(equityUSSeries); equityUSSeries = null; }
       const barsToDisplay = 120;
-      if (data.length > barsToDisplay) {
-        chart.timeScale().setVisibleRange({ from: data[data.length - barsToDisplay].time, to: data[data.length - 1].time });
-      } else { chart.timeScale().fitContent(); }
+      const range = data.length > barsToDisplay
+        ? { from: data.length - barsToDisplay, to: data.length - 1 + 3 }
+        : { from: 0, to: data.length - 1 + 3 };
+      allCharts().forEach(c => c.timeScale().setVisibleLogicalRange(range));
+      scheduleAlign();
 
-      const last = data[data.length - 1];
-      const initialIndicators = {};
-      Object.keys(indicatorSeries).forEach(id => {
-         let val = last[id.toLowerCase().replace(' ', '_')];
-         if (id === 'BB Up') val = last.bb_up; if (id === 'BB Low') val = last.bb_low; if (id === 'BB Mid') val = last.bb_mid;
-         if (id === 'Signal') val = last.signal;
-         if (val !== undefined && val !== null) initialIndicators[id] = val.toFixed(2);
-      });
-      if (last.total_pnl !== undefined && last.total_pnl !== null) initialIndicators['PnL'] = last.total_pnl.toFixed(0);
-      lastValidData = {
-        time: last.time, open: last.open.toFixed(2), high: last.high.toFixed(2), low: last.low.toFixed(2), close: last.close.toFixed(2),
-        v: (last.value/1000).toFixed(0) + 'K', indicators: initialIndicators
-      };
+      lastValidData = legendFor(data[data.length - 1]);
       legendData.value = lastValidData;
     } catch (e) { console.error('Fetch Error:', e); }
   } else if (props.mode === 'equity') {
@@ -373,16 +444,20 @@ const fetchData = async () => {
       if (!equityTWSeries) equityTWSeries = chart.addLineSeries({ color: '#1f6feb', lineWidth: 2, title: 'TW ROI', ...eqOptions });
       if (!equityUSSeries) equityUSSeries = chart.addLineSeries({ color: '#f87171', lineWidth: 2, title: 'US ROI', ...eqOptions });
       
+      // Read the legend values first: setData() rewrites each point's `time` string in place
+      // into a {year, month, day} object (lightweight-charts 3.x), which would then print as JSON.
+      const lastTotal = data.total && data.total.length ? { ...data.total[data.total.length - 1] } : null;
+      const lastTw = data.tw && data.tw.length ? data.tw[data.tw.length - 1].value : 0;
+      const lastUs = data.us && data.us.length ? data.us[data.us.length - 1].value : 0;
+
       if (data.total && data.total.length) equityTotalSeries.setData(data.total);
       if (data.tw && data.tw.length) equityTWSeries.setData(data.tw);
       if (data.us && data.us.length) equityUSSeries.setData(data.us);
       
       chart.timeScale().fitContent();
       
-      if (data.total && data.total.length > 0) {
-        const last = data.total[data.total.length - 1];
-        const lastTw = data.tw && data.tw.length ? data.tw[data.tw.length - 1].value : 0;
-        const lastUs = data.us && data.us.length ? data.us[data.us.length - 1].value : 0;
+      if (lastTotal) {
+        const last = lastTotal;
         legendData.value = {
           time: last.time,
           indicators: {
@@ -401,14 +476,22 @@ watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.
 onUnmounted(() => {
   fetchGeneration++;
   if (resizeObserver) resizeObserver.disconnect();
+  destroyPanels();
+  observed.clear();
   if (chart) { chart.remove(); chart = null; }
 });
 </script>
 
 <template>
-  <div class="relative w-full h-full select-none overflow-hidden">
-    <div ref="chartContainer" class="absolute inset-0"></div>
-    
+  <div class="relative w-full h-full select-none overflow-hidden flex flex-col">
+    <div ref="chartContainer" class="flex-1 min-h-0" :style="{ paddingRight: axisGap.main + 'px' }"></div>
+    <div v-for="name in activePanels" :key="name" class="relative shrink-0 border-t border-border-line" :style="{ height: PANEL_PX + 'px' }">
+      <div :ref="el => { if (el) panelEls[name] = el }" class="absolute inset-0" :style="{ paddingRight: (axisGap[name] || 0) + 'px' }"></div>
+      <div class="absolute left-2 top-1 z-10 text-[10px] font-mono text-gray-500 pointer-events-none">
+        {{ name }}<span v-if="name === 'RSI'" class="text-gray-600"> · 30 / 70</span>
+      </div>
+    </div>
+
     <!-- Equity Controls -->
     <div v-if="mode === 'equity'" class="absolute top-4 right-4 z-20 flex gap-2">
       <button @click="toggleEquityLine('Total')" :class="showEqTotal ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500' : 'bg-gray-800 text-gray-500 border-gray-700'" class="px-2 py-1 text-xs font-bold border rounded transition-colors cursor-pointer select-none">Total</button>
