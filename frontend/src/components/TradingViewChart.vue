@@ -73,6 +73,9 @@ let lastValidData = null;
 let fetchGeneration = 0;
 let rowsByTime = new Map();               // bar time -> API row, for the legend
 let btByTime = new Map();                 // bar time -> backtest equity
+let swingLine = null;                     // price line at the swing high of the displayed window
+const swing = ref(null);                  // { price, time, pct } : swing high and the last close's drop from it
+const VIEW_BARS = 120;                    // bars shown by default; the swing high is taken over the same window
 
 // RSI and MACD each live in their own chart under the main one. A chart has a single set of
 // price-axis labels spanning its whole height, so a shared chart cannot give each indicator
@@ -291,6 +294,8 @@ const clearIndicators = () => {
   if (pnlSeries) { chart.removeSeries(pnlSeries); pnlSeries = null; }
   if (backtestLineSeries) { chart.removeSeries(backtestLineSeries); backtestLineSeries = null; }
   btByTime = new Map();
+  if (swingLine) { candleSeries.removePriceLine(swingLine); swingLine = null; }
+  swing.value = null;
   destroyPanels();
   scheduleAlign();
 };
@@ -415,13 +420,26 @@ const fetchData = async () => {
         }
       }
 
+      const windowBars = data.slice(-VIEW_BARS).filter(d => Number.isFinite(d.high));
+      const lastClose = data[data.length - 1].close;
+      if (windowBars.length && Number.isFinite(lastClose)) {
+        const top = windowBars.reduce((m, d) => (d.high > m.high ? d : m));
+        const pct = (lastClose / top.high - 1) * 100;
+        swing.value = { price: top.high, time: timeLabel(top.time), pct };
+        swingLine = candleSeries.createPriceLine({
+          price: top.high, color: '#f2c94c', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+          title: `High ${pct.toFixed(2)}%`,
+        });
+        markers.push({ time: top.time, position: 'aboveBar', color: '#f2c94c', shape: 'circle', text: top.high.toFixed(2) });
+      }
+
       markers.sort((a, b) => barStartMs(a.time) - barStartMs(b.time));
       candleSeries.setMarkers(markers);
 
       if (equityTotalSeries) { chart.removeSeries(equityTotalSeries); equityTotalSeries = null; }
       if (equityTWSeries) { chart.removeSeries(equityTWSeries); equityTWSeries = null; }
       if (equityUSSeries) { chart.removeSeries(equityUSSeries); equityUSSeries = null; }
-      const barsToDisplay = 120;
+      const barsToDisplay = VIEW_BARS;
       const range = data.length > barsToDisplay
         ? { from: data.length - barsToDisplay, to: data.length - 1 + 3 }
         : { from: 0, to: data.length - 1 + 3 };
@@ -517,6 +535,10 @@ onUnmounted(() => {
           <div class="flex justify-between col-span-2 border-t border-white/10 pt-1.5 mt-0.5">
              <span class="text-gray-500 text-[10px]">VOLUME</span><span class="text-gray-300 font-mono">{{ legendData.v }}</span>
           </div>
+        </div>
+        <div v-if="mode !== 'equity' && swing" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1" :title="`最近 ${VIEW_BARS} 根 K 棒的最高價；回落以最新收盤計算`">
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[9px] uppercase tracking-tighter">Swing high</span><span class="text-yellow-400 font-mono font-bold">{{ swing.price.toFixed(2) }} <span class="text-gray-500 font-normal">{{ swing.time }}</span></span></div>
+          <div class="flex justify-between items-center"><span class="text-gray-500 text-[9px] uppercase tracking-tighter">From high</span><span :class="swing.pct >= 0 ? 'text-text-green' : 'text-text-red'" class="font-mono font-bold">{{ swing.pct.toFixed(2) }}%</span></div>
         </div>
         <div v-if="Object.keys(legendData.indicators || {}).length > 0" class="border-t border-white/10 pt-1.5 mt-0.5 grid grid-cols-1 gap-1">
           <div v-for="(val, id) in legendData.indicators" :key="id" class="flex justify-between items-center">

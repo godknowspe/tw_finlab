@@ -4,6 +4,10 @@ import re
 _TW_CODE = re.compile(r"^\d{4}[0-9A-Z]{0,2}$")
 
 
+# Yahoo index symbols for Taiwan markets: TAIEX and the OTC index.
+TW_INDEXES = frozenset({"^TWII", "^TWOII"})
+
+
 def canonical_symbol(symbol: str) -> str:
     """Ledger/cache key: upper-case, no whitespace, TWSE '.TW' suffix stripped (2330.TW -> 2330).
     OTC '.TWO' is kept because yfinance needs it and it cannot be inferred from the code."""
@@ -15,7 +19,7 @@ def canonical_symbol(symbol: str) -> str:
 
 def is_tw(symbol: str) -> bool:
     s = canonical_symbol(symbol)
-    return bool(_TW_CODE.match(s)) or s.endswith(".TWO")
+    return bool(_TW_CODE.match(s)) or s.endswith(".TWO") or s in TW_INDEXES
 
 
 def market_of(symbol: str) -> str:

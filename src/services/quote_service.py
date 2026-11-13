@@ -57,7 +57,7 @@ def get_quotes(symbols: Iterable[str], shioaji_api=None) -> Quotes:
     missing = [s for s in wanted if s not in out]
 
     if shioaji_api:
-        tw = [s for s in missing if is_tw(s)]
+        tw = [s for s in missing if is_tw(s) and not s.startswith("^")]  # Shioaji has no index snapshots
         if tw:
             try:
                 out.update(_shioaji_quotes(shioaji_api, tw))
