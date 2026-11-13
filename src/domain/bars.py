@@ -1,7 +1,7 @@
 """Bar period boundaries. A bar labelled `start` covers [start, bar_end(start, interval))."""
 import pandas as pd
 
-INTRADAY_MINUTES = {"15m": 15, "30m": 30, "60m": 60, "1h": 60}
+INTRADAY_MINUTES = {"1min": 1, "5min": 5, "15m": 15, "30m": 30, "60m": 60, "1h": 60}
 
 
 def bar_end(start: pd.Timestamp, interval: str) -> pd.Timestamp:

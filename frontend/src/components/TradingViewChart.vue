@@ -306,7 +306,9 @@ const fetchData = async () => {
   const stale = () => generation !== fetchGeneration || !chart;
   if (props.mode === 'symbol' && props.symbol) {
     try {
-      const res = await axios.get(`/api/kbars/${encodeURIComponent(props.symbol)}`, { params: { interval: marketStore.currentInterval, t: Date.now() } });
+      const live = isLiveInterval();
+      const res = await axios.get(`${live ? '/api/intraday' : '/api/kbars'}/${encodeURIComponent(props.symbol)}`,
+        { params: { interval: marketStore.currentInterval, t: Date.now() } });
       if (stale()) return;
       const data = res.data;
       if (!data || data.length === 0) {
@@ -314,6 +316,7 @@ const fetchData = async () => {
         return;
       }
 
+      liveError.value = '';
       const candles = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
       const volumes = data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' }));
 
@@ -448,7 +451,13 @@ const fetchData = async () => {
 
       lastValidData = legendFor(data[data.length - 1]);
       legendData.value = lastValidData;
-    } catch (e) { console.error('Fetch Error:', e); }
+    } catch (e) {
+      if (stale()) return;
+      if (isLiveInterval() && e.response) {
+        candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
+        liveError.value = e.response.data?.detail || e.message;
+      } else console.error('Fetch Error:', e);
+    }
   } else if (props.mode === 'equity') {
     try {
       const res = await axios.get('/api/equity');
@@ -489,9 +498,38 @@ const fetchData = async () => {
   }
 };
 
+// Same-day intervals are served from the backend's in-memory bars (fed by Shioaji ticks), so
+// polling here costs no broker API quota. Polling only swaps data: it never touches the zoom.
+const LIVE_INTERVALS = ['1min', '5min'];
+const LIVE_POLL_MS = 5000;
+const liveError = ref('');
+const isLiveInterval = () => LIVE_INTERVALS.includes(marketStore.currentInterval);
+let liveTimer = null;
+const stopLivePolling = () => { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } };
+const pollLive = async () => {
+  if (props.mode !== 'symbol' || !props.symbol || !isLiveInterval() || !chart || document.hidden) return;
+  const symbol = props.symbol, interval = marketStore.currentInterval;
+  try {
+    const res = await axios.get(`/api/intraday/${encodeURIComponent(symbol)}`, { params: { interval, t: Date.now() } });
+    if (symbol !== props.symbol || interval !== marketStore.currentInterval || !res.data.length) return;
+    const data = res.data;
+    // setData() rewrites time strings in place; the series get their own copies.
+    candleSeries.setData(data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
+    volumeSeries.setData(data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' })));
+    rowsByTime = new Map(data.map(d => [d.time, d]));
+    lastValidData = legendFor(data[data.length - 1]);
+    legendData.value = lastValidData;
+  } catch (e) { /* keep the last picture; the next poll retries */ }
+};
+watch(() => [props.symbol, props.mode, marketStore.currentInterval], () => {
+  stopLivePolling();
+  if (props.mode === 'symbol' && isLiveInterval()) liveTimer = setInterval(pollLive, LIVE_POLL_MS);
+}, { immediate: true });
+
 onMounted(() => { initChart(); fetchData(); });
 watch(() => [props.symbol, props.mode, marketStore.currentInterval, marketStore.selectedIndicators, marketStore.backtestEnabled, marketStore.backtestResults, portfolioStore.trades], () => fetchData(), { deep: true });
 onUnmounted(() => {
+  stopLivePolling();
   fetchGeneration++;
   if (resizeObserver) resizeObserver.disconnect();
   destroyPanels();
@@ -502,6 +540,7 @@ onUnmounted(() => {
 
 <template>
   <div class="relative w-full h-full select-none overflow-hidden flex flex-col">
+    <div v-if="liveError" class="absolute inset-x-0 top-1/3 z-30 mx-auto w-fit max-w-lg bg-black/80 border border-yellow-600/50 text-yellow-400 text-xs rounded-lg px-4 py-3 text-center">{{ liveError }}</div>
     <div ref="chartContainer" class="flex-1 min-h-0" :style="{ paddingRight: axisGap.main + 'px' }"></div>
     <div v-for="name in activePanels" :key="name" class="relative shrink-0 border-t border-border-line" :style="{ height: PANEL_PX + 'px' }">
       <div :ref="el => { if (el) panelEls[name] = el }" class="absolute inset-0" :style="{ paddingRight: (axisGap[name] || 0) + 'px' }"></div>

@@ -116,3 +116,11 @@ def test_publisher_role_is_configuration_not_inferred(tmp_path, monkeypatch, env
     status = server.deps.sync_status()["export"]["state"]
     server.deps._state.close()
     assert (status == "off") if expected == "off" else (status != "off")
+
+
+def test_intraday_rejects_non_tw_and_unconfigured_shioaji(client):
+    assert client.get("/api/intraday/VTI").status_code == 422
+    assert client.get("/api/intraday/%5ETWII").status_code == 422
+    assert client.get("/api/intraday/0050?interval=7").status_code == 422
+    r = client.get("/api/intraday/0050")
+    assert r.status_code == 503 and "Shioaji" in r.json()["detail"]

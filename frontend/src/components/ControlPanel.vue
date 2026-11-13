@@ -74,6 +74,8 @@ const syncLabel = (st) => {
       <div>
         <div class="text-[10px] text-gray-500 mb-2 font-mono uppercase tracking-widest">[Chart Interval]</div>
         <select v-model="marketStore.currentInterval" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500 appearance-none text-center">
+          <option value="1min">1 Min (TW, live)</option>
+          <option value="5min">5 Min (TW, live)</option>
           <option value="15m">15 Minutes</option>
           <option value="30m">30 Minutes</option>
           <option value="60m">1 Hour</option>

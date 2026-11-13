@@ -9,13 +9,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.data.models import get_engine, get_session
-from src.domain.symbols import canonical_symbol
+from src.domain.symbols import canonical_symbol, is_tw
 from src.domain.bars import bar_ends
 from src.domain.valuation import bar_pnl
 from src.engine.backtest import BacktestEngine
 from src.engine.strategies import STRATEGIES
 from src.services.config_service import ConfigService
 from src.services.indicator_service import IndicatorService
+from src.services.intraday import IntradayService, RateLimited, resample
 from src.services.market_data import INTRADAY, MarketDataService
 from src.services.quote_service import get_quotes, shioaji_api_if_enabled
 from src.web import deps
@@ -24,6 +25,8 @@ router = APIRouter(prefix="/api")
 
 SECRET_KEYS = {"shioaji_api_key", "shioaji_api_secret", "shioaji_person_id", "shioaji_password"}
 INTERVALS = {"15m", "30m", "60m", "1h", "1d", "1wk", "1mo"}
+LIVE_INTERVALS = {"1min": 1, "5min": 5}
+_intraday = {"service": None, "api": None}
 
 
 class ConfigUpdate(BaseModel):
@@ -93,6 +96,47 @@ def get_kbars(stock_id: str, interval: str = "1d", db: Session = Depends(deps.ge
             "total_pnl": _num(p["total_pnl"]), "pnl_pct": _num(p["pnl_pct"]),
         })
     return result
+
+
+def _intraday_service(db: Session) -> IntradayService:
+    api = shioaji_api_if_enabled(ConfigService(db))
+    if api is None:
+        raise HTTPException(status_code=503, detail="Same-day charts need Shioaji: enter the API key and secret and set Realtime to Shioaji")
+    if _intraday["api"] is not api:                      # first use, or the session was rebuilt
+        _intraday["service"], _intraday["api"] = IntradayService(api), api
+    return _intraday["service"]
+
+
+@router.get("/intraday/{stock_id}")
+def get_intraday(stock_id: str, interval: str = "1min", db: Session = Depends(deps.get_db)):
+    """Same-day bars for a TW stock. Reads local memory; Shioaji is called once per symbol per
+    day (backfill) and then fed by pushed ticks, so refreshing this endpoint costs no API quota."""
+    if interval not in LIVE_INTERVALS:
+        raise HTTPException(status_code=422, detail=f"unsupported interval {interval}")
+    sym = canonical_symbol(stock_id)
+    if not is_tw(sym) or sym.startswith("^") or sym.endswith(".TWO"):
+        raise HTTPException(status_code=422, detail="Same-day charts support listed TW stocks only")
+    svc = _intraday_service(db)
+    try:
+        bars = svc.get(sym)
+    except RateLimited as e:
+        raise HTTPException(status_code=429, detail=f"Shioaji call budget reached ({e}); try again shortly")
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"{sym} is not a Shioaji stock contract")
+    df = resample(bars.frame(), LIVE_INTERVALS[interval])
+    if df.empty:
+        return []
+    df = IndicatorService.add_all_indicators(df)
+    trades = [t for t in deps.state().snapshot()["trades"] if t["symbol"] == sym]
+    pnl = bar_pnl(trades, df.index, df["close"], interval) if trades else [{"total_pnl": None, "pnl_pct": None}] * len(df)
+    ends = bar_ends(df.index, interval)
+    return [{
+        "time": _chart_time(ts, True), "end": int(end.tz_localize("UTC").timestamp()),
+        "open": _num(row["open"]), "high": _num(row["high"]), "low": _num(row["low"]), "close": _num(row["close"]),
+        "value": _num(row["volume"]),
+        **{k: _num(row.get(k)) for k in ("sma5", "sma10", "sma20", "macd", "signal", "histogram", "rsi", "bb_up", "bb_mid", "bb_low", "k", "d")},
+        "total_pnl": _num(p["total_pnl"]), "pnl_pct": _num(p["pnl_pct"]),
+    } for (ts, row), p, end in zip(df.iterrows(), pnl, ends)]
 
 
 @router.get("/backtest/{symbol}")

@@ -15,7 +15,7 @@ class ShioajiProvider(BaseDataProvider):
     @property
     def api(self):
         if self._api is None:
-            logger.info("Shioaji: Initializing API client...")
+            logger.debug("Shioaji: Initializing API client...")
             self._api = self.client.get_api(self.api_key, self.api_secret)
         return self._api
 
