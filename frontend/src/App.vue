@@ -4,6 +4,7 @@ import MarketSidebar from './components/MarketSidebar.vue';
 import TradingViewChart from './components/TradingViewChart.vue';
 import ControlPanel from './components/ControlPanel.vue';
 import AnalysisView from './components/AnalysisView.vue';
+import RegimeBar from './components/RegimeBar.vue';
 import { useMarketStore } from './stores/market';
 import { usePortfolioStore } from './stores/portfolio';
 import { Layout } from 'lucide-vue-next';
@@ -56,6 +57,8 @@ onUnmounted(() => clearInterval(revisionTimer));
           {{ showRightPanel ? 'HIDE CONTROLS' : 'SHOW CONTROLS' }}
         </button>
       </div>
+
+      <RegimeBar v-if="chartMode === 'symbol'" :symbol="marketStore.currentSymbol" />
 
       <!-- Content Area -->
       <div class="flex-1 relative flex flex-col min-h-0 bg-black/20">

@@ -124,3 +124,10 @@ def test_intraday_rejects_non_tw_and_unconfigured_shioaji(client):
     assert client.get("/api/intraday/0050?interval=7").status_code == 422
     r = client.get("/api/intraday/0050")
     assert r.status_code == 503 and "Shioaji" in r.json()["detail"]
+
+
+def test_regime_endpoints_degrade_without_history(client):
+    r = client.get("/api/regime/NOPE")
+    assert r.status_code == 200 and r.json()["available"] is False
+    r = client.get("/api/regime-trips")
+    assert r.status_code == 200 and r.json() == {"trips": [], "groups": []}

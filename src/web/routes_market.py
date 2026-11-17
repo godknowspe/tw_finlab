@@ -15,6 +15,8 @@ from src.domain.valuation import bar_pnl
 from src.engine.backtest import BacktestEngine
 from src.engine.strategies import STRATEGIES
 from src.services.config_service import ConfigService
+from src.domain import regime
+from src.domain.risk import round_trips
 from src.services.indicator_service import IndicatorService
 from src.services.intraday import IntradayService, RateLimited, resample
 from src.services.market_data import INTRADAY, MarketDataService
@@ -137,6 +139,32 @@ def get_intraday(stock_id: str, interval: str = "1min", db: Session = Depends(de
         **{k: _num(row.get(k)) for k in ("sma5", "sma10", "sma20", "macd", "signal", "histogram", "rsi", "bb_up", "bb_mid", "bb_low", "k", "d")},
         "total_pnl": _num(p["total_pnl"]), "pnl_pct": _num(p["pnl_pct"]),
     } for (ts, row), p, end in zip(df.iterrows(), pnl, ends)]
+
+
+@router.get("/regime/{symbol}")
+def get_regime(symbol: str, db: Session = Depends(deps.get_db)):
+    """Trend/volatility state of one instrument from daily bars, with what historically followed
+    each state. Descriptive only: the statistics show the labels have little forecasting value."""
+    sym = canonical_symbol(symbol)
+    df = MarketDataService(db).get_bars(sym, "1d")
+    state = regime.describe(df) if not df.empty else None
+    if state is None:
+        return {"symbol": sym, "available": False, "reason": f"需要至少 {regime.MIN_BARS} 根日 K"}
+    return {"symbol": sym, "available": True, "as_of": df.index[-1].strftime("%Y-%m-%d"), **state,
+            "forward": {"days": 20, "stats": regime.forward_stats(df, 20)}}
+
+
+@router.get("/regime-trips")
+def get_regime_trips(db: Session = Depends(deps.get_db)):
+    """The user's finished sell/buy-back round trips, grouped by the state of that symbol on the
+    day of the first sale, so the results can be read against how the market looked at the time."""
+    s = deps.state().snapshot()
+    market = MarketDataService(db)
+    syms = {t["symbol"] for t in s["trades"] if t["action"] == "SELL"}
+    bars = {sym: market.get_bars(sym, "1d") for sym in syms}
+    hist = {sym: regime.history(b.dropna(subset=["close", "high", "low"])) for sym, b in bars.items() if len(b) >= regime.MIN_BARS}
+    trips = round_trips(s["trades"], {sym: b["close"] for sym, b in bars.items()})
+    return regime.trips_by_state(trips, hist)
 
 
 @router.get("/backtest/{symbol}")
