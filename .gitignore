@@ -86,3 +86,7 @@ src/test_shioaji.py
 *.log
 .playwright-mcp/
 *.lock
+
+# research/twii_regime outputs: regenerate with `python -m research.twii_regime.run` and `.report`
+research/twii_regime/results.json
+research/twii_regime/report.html
