@@ -1,5 +1,6 @@
 import datetime
 import threading
+import time
 import zoneinfo
 import shioaji as sj
 import pandas as pd
@@ -7,18 +8,40 @@ from typing import Optional
 
 TAIPEI = zoneinfo.ZoneInfo("Asia/Taipei")
 
+RELOGIN_COOLDOWN_S = 30      # Shioaji allows 1000 logins a day and may suspend clients that hammer it
+
+
+class ShioajiCoolingDown(RuntimeError):
+    """A new login was attempted too soon after the last one."""
+
+
 class ShioajiClient:
-    """Process-wide logged-in session. Only published after a successful login, and rebuilt
-    when the credentials change (the old version cached an un-logged-in client forever)."""
+    """Process-wide logged-in session. Only published after a successful login, rebuilt when the
+    credentials change, and dropped by `reset()` when a call shows the session has died (it
+    expires overnight; without this the dead object was handed out forever)."""
     _instance = None
     _lock = threading.Lock()
+    _clock = staticmethod(time.monotonic)
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ShioajiClient, cls).__new__(cls)
             cls._instance._api = None
             cls._instance._creds = None
+            cls._instance._last_login = None
         return cls._instance
+
+    def reset(self, api=None):
+        """Forget the session so the next `get_api` logs in again. `api` is the object the caller
+        saw fail; if a newer session has replaced it meanwhile, leave the new one alone."""
+        with self._lock:
+            if self._api is None or (api is not None and api is not self._api):
+                return
+            try:
+                self._api.logout()
+            except Exception:
+                pass
+            self._api = None
 
     def get_api(self, api_key: str = "", api_secret: str = ""):
         if not (api_key and api_secret):
@@ -32,6 +55,9 @@ class ShioajiClient:
                 except Exception:
                     pass
                 self._api = None
+            if self._last_login is not None and self._clock() - self._last_login < RELOGIN_COOLDOWN_S:
+                raise ShioajiCoolingDown(f"last login was {self._clock() - self._last_login:.0f}s ago; retry in a moment")
+            self._last_login = self._clock()
             api = sj.Shioaji()
             api.login(api_key=api_key, secret_key=api_secret)
             self._api, self._creds = api, (api_key, api_secret)

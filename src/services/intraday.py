@@ -54,15 +54,22 @@ def _minute(ts) -> pd.Timestamp:
     return pd.Timestamp(ts).floor("min")
 
 
-def bars_from_kbars(kbars: dict) -> "OrderedDict[pd.Timestamp, dict]":
-    """Shioaji stamps a kbar with the END of its minute and reports volume in lots; the chart
-    wants the START of the minute and shares. Idle minutes have zero volume and are dropped."""
+# Index symbols the dashboard uses -> Shioaji index contract code (TSE group).
+INDEX_CODES = {"^TWII": "IX0001"}
+
+
+def bars_from_kbars(kbars: dict, index: bool = False) -> "OrderedDict[pd.Timestamp, dict]":
+    """Shioaji stamps a kbar with the END of its minute and reports stock volume in lots; the
+    chart wants the START of the minute and shares. Idle minutes have zero volume and are dropped.
+    An index has no share volume, so its bars carry the traded amount (TWD) instead."""
     out = OrderedDict()
-    for ts, o, h, l, c, v in zip(kbars["ts"], kbars["Open"], kbars["High"], kbars["Low"], kbars["Close"], kbars["Volume"]):
-        if not v:
+    amounts = kbars.get("Amount") if index else None
+    for n, (ts, o, h, l, c, v) in enumerate(zip(kbars["ts"], kbars["Open"], kbars["High"], kbars["Low"], kbars["Close"], kbars["Volume"])):
+        vol = float(amounts[n]) if index and amounts is not None else float(v) * 1000
+        if not (float(amounts[n]) if index and amounts is not None else v):
             continue
         start = _minute(pd.Timestamp(ts) - pd.Timedelta(minutes=1))
-        out[start] = {"open": float(o), "high": float(h), "low": float(l), "close": float(c), "volume": float(v) * 1000}
+        out[start] = {"open": float(o), "high": float(h), "low": float(l), "close": float(c), "volume": vol}
     return out
 
 
@@ -72,6 +79,7 @@ class IntradayBars:
     def __init__(self):
         self.day = None
         self.bars = OrderedDict()
+        self._amount_seen = 0.0           # cumulative traded amount already folded into the bars (index only)
         self._lock = threading.Lock()
 
     def reset(self, day, backfill):
@@ -81,6 +89,7 @@ class IntradayBars:
             newer = [(k, v) for k, v in self.bars.items() if backfill and k > next(reversed(backfill))] if self.day is None else []
             self.day = day
             self.bars = OrderedDict(sorted([*backfill.items(), *newer]))
+            self._amount_seen = sum(b["volume"] for b in self.bars.values())
 
     def add_tick(self, ts, price: float, lots: float, simtrade: bool = False):
         """Fold one tick into its minute. Pre-open simulated matches and ticks outside the
@@ -98,6 +107,26 @@ class IntradayBars:
             else:
                 b["high"], b["low"], b["close"] = max(b["high"], price), min(b["low"], price), price
                 b["volume"] += lots * 1000
+
+    def add_quote(self, ts, price: float, amount: float):
+        """Index quote: the price is the close at `ts`; `amount` is the cumulative traded amount
+        of the day, so the minute's volume is the growth since the last quote. A cumulative that
+        goes backwards (a late or duplicated push) adds nothing instead of a negative volume."""
+        ts = pd.Timestamp(ts)
+        if not (OPEN <= ts.time() <= CLOSE):
+            return
+        start = _minute(ts)
+        with self._lock:
+            if self.day is not None and ts.date() != self.day:
+                return
+            grew = max(0.0, amount - self._amount_seen) if amount is not None else 0.0
+            self._amount_seen = max(self._amount_seen, amount or 0.0)
+            b = self.bars.get(start)
+            if b is None:
+                self.bars[start] = {"open": price, "high": price, "low": price, "close": price, "volume": grew}
+            else:
+                b["high"], b["low"], b["close"] = max(b["high"], price), min(b["low"], price), price
+                b["volume"] += grew
 
     def frame(self) -> pd.DataFrame:
         with self._lock:
@@ -125,6 +154,8 @@ class IntradayService:
         self._symbols = OrderedDict()          # code -> IntradayBars, oldest first
         self._lock = threading.Lock()
         api.set_on_tick_stk_v1_callback(self._on_tick)
+        api.set_on_quote_idx_v1_callback(self._on_index_quote)
+        self._index_by_code = {code: sym for sym, code in INDEX_CODES.items()}
 
     def _on_tick(self, exchange, tick):
         bars = self._symbols.get(tick.code)
@@ -132,35 +163,52 @@ class IntradayService:
             # Tick datetimes arrive as Taipei wall-clock, matching how the rest of the app stores bars.
             bars.add_tick(tick.datetime.replace(tzinfo=None), float(tick.close), float(tick.volume), bool(tick.simtrade))
 
+    def _on_index_quote(self, exchange, quote):
+        sym = self._index_by_code.get(quote.code)
+        bars = self._symbols.get(sym) if sym else None
+        if bars is not None:
+            bars.add_quote(quote.datetime.replace(tzinfo=None), float(quote.close), float(quote.amount) if quote.amount is not None else None)
+
+    def _contract(self, code: str):
+        if code in INDEX_CODES:
+            try:
+                return self.api.Contracts.Indexs.TSE[INDEX_CODES[code]]
+            except (KeyError, AttributeError):
+                return None
+        return self.api.Contracts.Stocks[code]
+
     def get(self, code: str) -> IntradayBars:
         with self._lock:
             bars = self._symbols.get(code)
             if bars is not None and bars.day == self.today():
                 self._symbols.move_to_end(code)
                 return bars
-            contract = self.api.Contracts.Stocks[code]
+            contract = self._contract(code)
             if not contract:
                 raise KeyError(code)
             bars = bars or IntradayBars()
             self._symbols[code] = bars
             # Subscribe first: ticks arriving during the backfill are merged by add_tick, so no gap.
-            self._subscribe(contract)
+            self._subscribe(contract, code)
             self.gate.acquire("kbars")
             today = self.today().isoformat()
             k = self.api.kbars(contract, start=today, end=today)
-            bars.reset(self.today(), bars_from_kbars({**k}))
+            bars.reset(self.today(), bars_from_kbars({**k}, index=code in INDEX_CODES))
             while len(self._symbols) > MAX_SUBSCRIPTIONS:
                 old, _ = self._symbols.popitem(last=False)
                 self._unsubscribe(old)
             return bars
 
-    def _subscribe(self, contract):
+    def _subscribe(self, contract, code: str):
         import shioaji as sj
-        self.api.subscribe(contract, quote_type=sj.QuoteType.Tick, version=sj.QuoteVersion.v1)
+        kind = sj.QuoteType.Quote if code in INDEX_CODES else sj.QuoteType.Tick
+        self.api.subscribe(contract, quote_type=kind, version=sj.QuoteVersion.v1)
 
     def _unsubscribe(self, code):
         import shioaji as sj
         try:
-            self.api.unsubscribe(self.api.Contracts.Stocks[code], quote_type=sj.QuoteType.Tick, version=sj.QuoteVersion.v1)
+            contract = self._contract(code)
+            kind = sj.QuoteType.Quote if code in INDEX_CODES else sj.QuoteType.Tick
+            self.api.unsubscribe(contract, quote_type=kind, version=sj.QuoteVersion.v1)
         except Exception as e:
             logger.warning(f"Shioaji unsubscribe {code} failed: {e}")

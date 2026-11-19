@@ -118,6 +118,22 @@ const allCharts = () => [chart, ...activePanels.value.map(n => panelCharts[n])].
 // indices (used to sync the visible range) mean the same bar in each.
 const lineData = (data, key) => data.map(d => (d[key] === null || d[key] === undefined ? { time: d.time } : { time: d.time, value: d[key] }));
 
+// A same-day chart always spans the whole trading session (09:00-13:30), like Yahoo: bars that
+// have not happened yet are empty points (time only) up to the close, so an hour after the open
+// the line fills the left quarter and the rest stays blank. Real bars never carry `pad`.
+const SESSION_START_S = 9 * 3600, SESSION_END_S = 13 * 3600 + 30 * 60;
+const withSessionPadding = (data, stepMin) => {
+  if (!data.length || typeof data[0].time !== 'number') return data;
+  const step = stepMin * 60;
+  const dayStart = data[0].time - (((data[0].time % 86400) - SESSION_START_S + 86400) % 86400);   // 09:00 of that day, in the same pseudo-UTC seconds
+  const lastReal = data[data.length - 1].time;
+  const out = data.slice();
+  for (let t = lastReal + step; t <= dayStart + (SESSION_END_S - SESSION_START_S) - step; t += step) out.push({ time: t, pad: true });   // dayStart is 09:00, so add the session length, not the clock time of the close
+  return out;
+};
+const liveStepMin = () => (marketStore.currentInterval === '5min' ? 5 : 1);
+const realBars = (data) => data.filter(d => !d.pad);
+
 let syncing = false;
 const syncRange = (source) => (range) => {
   if (!range || syncing) return;
@@ -300,7 +316,7 @@ const clearIndicators = () => {
   scheduleAlign();
 };
 
-const fetchData = async () => {
+const fetchData = async (refreshOnly = false) => {
   if (!chart) return;
   const generation = ++fetchGeneration;
   const stale = () => generation !== fetchGeneration || !chart;
@@ -317,8 +333,9 @@ const fetchData = async () => {
       }
 
       liveError.value = '';
-      const candles = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
-      const volumes = data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' }));
+      const shown = live ? withSessionPadding(data, liveStepMin()) : data;       // what the charts draw; `data` stays the real bars
+      const candles = shown.map(d => (d.pad ? { time: d.time } : { time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
+      const volumes = shown.map(d => (d.pad ? { time: d.time } : { time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' }));
 
       candleSeries.setData(candles);
       volumeSeries.setData(volumes);
@@ -330,7 +347,7 @@ const fetchData = async () => {
       const panels = PANEL_ORDER.filter(n => marketStore.selectedIndicators.includes(n) && data[0][n.toLowerCase()] !== undefined);
       // The date axis is drawn once, under the last chart.
       chart.applyOptions({ timeScale: { visible: panels.length === 0 } });
-      await buildPanels(panels, data, colors);
+      await buildPanels(panels, shown, colors);
       if (stale()) return;
 
       marketStore.selectedIndicators.forEach(id => {
@@ -339,14 +356,14 @@ const fetchData = async () => {
           indicatorSeries['BB Up'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
           indicatorSeries['BB Low'] = chart.addLineSeries({ color: colors.BB, lineWidth: 1, lineStyle: 2, priceLineVisible: false });
           indicatorSeries['BB Mid'] = chart.addLineSeries({ color: '#56ccf2', lineWidth: 1, priceLineVisible: false });
-          indicatorSeries['BB Up'].setData(lineData(data, 'bb_up'));
-          indicatorSeries['BB Low'].setData(lineData(data, 'bb_low'));
-          indicatorSeries['BB Mid'].setData(lineData(data, 'bb_mid'));
+          indicatorSeries['BB Up'].setData(lineData(shown, 'bb_up'));
+          indicatorSeries['BB Low'].setData(lineData(shown, 'bb_low'));
+          indicatorSeries['BB Mid'].setData(lineData(shown, 'bb_mid'));
         } else if (id === 'MACD' || id === 'RSI') {
           // drawn in their own charts (buildPanels)
         } else if (data[0][key] !== undefined) {
           indicatorSeries[id] = chart.addLineSeries({ color: colors[id] || '#56ccf2', lineWidth: 1, priceLineVisible: false });
-          indicatorSeries[id].setData(lineData(data, key));
+          indicatorSeries[id].setData(lineData(shown, key));
         }
       });
 
@@ -443,10 +460,12 @@ const fetchData = async () => {
       if (equityTWSeries) { chart.removeSeries(equityTWSeries); equityTWSeries = null; }
       if (equityUSSeries) { chart.removeSeries(equityUSSeries); equityUSSeries = null; }
       const barsToDisplay = VIEW_BARS;
-      const range = data.length > barsToDisplay
-        ? { from: data.length - barsToDisplay, to: data.length - 1 + 3 }
-        : { from: 0, to: data.length - 1 + 3 };
-      allCharts().forEach(c => c.timeScale().setVisibleLogicalRange(range));
+      const range = live
+        ? { from: -0.5, to: shown.length - 0.5 }                                  // the whole session, empty to the right
+        : data.length > barsToDisplay
+          ? { from: data.length - barsToDisplay, to: data.length - 1 + 3 }
+          : { from: 0, to: data.length - 1 + 3 };
+      if (!refreshOnly) allCharts().forEach(c => c.timeScale().setVisibleLogicalRange(range));   // a poll must not undo the user's zoom
       scheduleAlign();
 
       lastValidData = legendFor(data[data.length - 1]);
@@ -454,8 +473,8 @@ const fetchData = async () => {
     } catch (e) {
       if (stale()) return;
       if (isLiveInterval() && e.response) {
-        candleSeries.setData([]); volumeSeries.setData([]); clearIndicators();
         liveError.value = e.response.data?.detail || e.message;
+        if (!refreshOnly) { candleSeries.setData([]); volumeSeries.setData([]); clearIndicators(); }   // a failed poll keeps the last picture
       } else console.error('Fetch Error:', e);
     }
   } else if (props.mode === 'equity') {
@@ -508,18 +527,7 @@ let liveTimer = null;
 const stopLivePolling = () => { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } };
 const pollLive = async () => {
   if (props.mode !== 'symbol' || !props.symbol || !isLiveInterval() || !chart || document.hidden) return;
-  const symbol = props.symbol, interval = marketStore.currentInterval;
-  try {
-    const res = await axios.get(`/api/intraday/${encodeURIComponent(symbol)}`, { params: { interval, t: Date.now() } });
-    if (symbol !== props.symbol || interval !== marketStore.currentInterval || !res.data.length) return;
-    const data = res.data;
-    // setData() rewrites time strings in place; the series get their own copies.
-    candleSeries.setData(data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
-    volumeSeries.setData(data.map(d => ({ time: d.time, value: d.value, color: d.close >= d.open ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)' })));
-    rowsByTime = new Map(data.map(d => [d.time, d]));
-    lastValidData = legendFor(data[data.length - 1]);
-    legendData.value = lastValidData;
-  } catch (e) { /* keep the last picture; the next poll retries */ }
+  await fetchData(true);                  // same path as a full load, so indicators, panels and the swing high stay current
 };
 watch(() => [props.symbol, props.mode, marketStore.currentInterval], () => {
   stopLivePolling();

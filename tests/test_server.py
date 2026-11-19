@@ -120,7 +120,7 @@ def test_publisher_role_is_configuration_not_inferred(tmp_path, monkeypatch, env
 
 def test_intraday_rejects_non_tw_and_unconfigured_shioaji(client):
     assert client.get("/api/intraday/VTI").status_code == 422
-    assert client.get("/api/intraday/%5ETWII").status_code == 422
+    assert client.get("/api/intraday/%5EGSPC").status_code == 422
     assert client.get("/api/intraday/0050?interval=7").status_code == 422
     r = client.get("/api/intraday/0050")
     assert r.status_code == 503 and "Shioaji" in r.json()["detail"]
@@ -131,3 +131,63 @@ def test_regime_endpoints_degrade_without_history(client):
     assert r.status_code == 200 and r.json()["available"] is False
     r = client.get("/api/regime-trips")
     assert r.status_code == 200 and r.json() == {"trips": [], "groups": []}
+
+
+def _intraday_with(monkeypatch, services):
+    """Drive /api/intraday with scripted Shioaji services: each call to the factory yields the next one."""
+    from src.web import routes_market as rm
+    seq = iter(services)
+    resets = []
+
+    class Fake:
+        pass
+
+    rm._intraday["service"] = rm._intraday["api"] = None
+    def factory(db):
+        if rm._intraday["service"] is None:
+            rm._intraday["service"], rm._intraday["api"] = next(seq), Fake()
+        return rm._intraday["service"]
+    monkeypatch.setattr(rm, "_intraday_service", factory)
+    monkeypatch.setattr(rm.ShioajiClient, "reset", lambda self, api=None: resets.append(api))
+    return resets
+
+
+def _bars_service(rows=None, error=None):
+    import pandas as pd
+    from src.services.intraday import IntradayBars
+
+    class Svc:
+        def get(self, code):
+            if error:
+                raise error
+            b = IntradayBars()
+            b.add_tick("2026-11-13 09:00:10", 100.0, 1)
+            b.add_tick("2026-11-13 09:01:10", 101.0, 1)
+            return b
+    return Svc()
+
+
+def test_intraday_recovers_from_a_dead_shioaji_session(client, monkeypatch):
+    import shioaji as sj
+    resets = _intraday_with(monkeypatch, [_bars_service(error=sj.ShioajiConnectionError("SessionNotEstablished")), _bars_service()])
+    r = client.get("/api/intraday/0050")
+    assert r.status_code == 200 and len(r.json()) == 2           # the retry on a fresh session succeeded
+    assert len(resets) == 1                                        # the dead session was dropped exactly once
+
+
+def test_intraday_reports_a_persistent_outage_as_503_with_the_reason(client, monkeypatch):
+    import shioaji as sj
+    _intraday_with(monkeypatch, [_bars_service(error=sj.ShioajiConnectionError("down")), _bars_service(error=sj.ShioajiConnectionError("still down"))])
+    r = client.get("/api/intraday/0050")
+    assert r.status_code == 503 and "connection lost" in r.json()["detail"]
+
+
+def test_intraday_serves_the_taiex_and_maps_cooldown_and_budget_errors(client, monkeypatch):
+    from src.api.shioaji_api import ShioajiCoolingDown
+    from src.services.intraday import RateLimited
+    _intraday_with(monkeypatch, [_bars_service()])
+    assert client.get("/api/intraday/%5ETWII").status_code == 200
+    _intraday_with(monkeypatch, [_bars_service(error=ShioajiCoolingDown("5s ago"))])
+    assert client.get("/api/intraday/0050").status_code == 503
+    _intraday_with(monkeypatch, [_bars_service(error=RateLimited("20 calls"))])
+    assert client.get("/api/intraday/0050").status_code == 429

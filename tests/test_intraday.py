@@ -71,10 +71,15 @@ def test_gate_refuses_a_burst_then_recovers_and_caps_kbars_per_day():
 class FakeApi:
     def __init__(self):
         self.kbars_calls, self.subscribed, self.unsubscribed, self.callback = 0, [], [], None
-        self.Contracts = type("C", (), {"Stocks": {c: c for c in ("0050", "2330", *[f"{n:04d}" for n in range(1101, 1115)])}})()
+        self.idx_callback = None
+        self.Contracts = type("C", (), {"Stocks": {c: c for c in ("0050", "2330", *[f"{n:04d}" for n in range(1101, 1115)])},
+                                        "Indexs": type("I", (), {"TSE": {"IX0001": "IX0001"}})()})()
 
     def set_on_tick_stk_v1_callback(self, cb):
         self.callback = cb
+
+    def set_on_quote_idx_v1_callback(self, cb):
+        self.idx_callback = cb
 
     def subscribe(self, contract, **_):
         self.subscribed.append(contract)
@@ -113,3 +118,64 @@ def test_service_caps_subscriptions_and_drops_the_oldest():
     for c in codes:
         svc.get(c)
     assert api.unsubscribed == codes[:2] and len(svc._symbols) == MAX_SUBSCRIPTIONS
+
+
+def test_client_logs_in_again_after_reset_but_not_more_often_than_the_cooldown(monkeypatch):
+    from src.api import shioaji_api as m
+    logins = []
+
+    class Fake:
+        def login(self, api_key, secret_key):
+            logins.append((api_key, secret_key))
+
+        def logout(self):
+            pass
+
+    monkeypatch.setattr(m.sj, "Shioaji", Fake)
+    now = [1000.0]
+    m.ShioajiClient._instance = None
+    c = m.ShioajiClient()
+    c._clock = lambda: now[0]
+    a = c.get_api("k", "s")
+    assert c.get_api("k", "s") is a and len(logins) == 1               # cached while healthy
+    c.reset(a)
+    now[0] += 5
+    with pytest.raises(m.ShioajiCoolingDown):
+        c.get_api("k", "s")                                            # 5 s after the last login: refuse, do not hammer
+    now[0] += m.RELOGIN_COOLDOWN_S
+    b = c.get_api("k", "s")
+    assert b is not a and len(logins) == 2
+    c.reset(a)                                                         # a stale caller resetting the old session must not kill the new one
+    assert c.get_api("k", "s") is b and len(logins) == 2
+    m.ShioajiClient._instance = None
+
+
+def test_index_quotes_build_minute_bars_with_volume_from_the_cumulative_amount_difference():
+    b = IntradayBars()
+    b.add_quote("2026-11-13 09:00:05", 100.0, amount=1_000.0)     # first quote of the day: its whole amount belongs to this minute
+    b.add_quote("2026-11-13 09:00:35", 101.0, amount=1_800.0)
+    b.add_quote("2026-11-13 09:01:05", 99.0, amount=2_500.0)
+    df = b.frame()
+    assert df.iloc[0].to_dict() == {"open": 100.0, "high": 101.0, "low": 100.0, "close": 101.0, "volume": 1_800.0}
+    assert df.iloc[1].to_dict() == {"open": 99.0, "high": 99.0, "low": 99.0, "close": 99.0, "volume": 700.0}
+    b.add_quote("2026-11-13 09:01:30", 98.0, amount=2_400.0)       # an amount that goes backwards is ignored, never negative volume
+    assert b.frame().iloc[1]["volume"] == 700.0 and b.frame().iloc[1]["low"] == 98.0
+
+
+def test_index_backfill_uses_the_amount_column_and_keeps_minute_start_labels():
+    k = kb([("2026-11-13 09:01:00", 100, 101, 99, 100.5, 7)])
+    k["Amount"] = [12345.0]
+    bars = bars_from_kbars(k, index=True)
+    assert list(bars) == [pd.Timestamp("2026-11-13 09:00")] and bars[pd.Timestamp("2026-11-13 09:00")]["volume"] == 12345.0
+
+
+def test_index_service_subscribes_quotes_and_routes_them_by_code():
+    from src.services.intraday import IntradayService
+    api = FakeApi()
+    svc = IntradayService(api, today=lambda: datetime.date(2026, 11, 13))
+    api.kbars = lambda contract, start, end: {**kb([("2026-11-13 09:01:00", 100, 100, 100, 100, 3)]), "Amount": [500.0]}
+    bars = svc.get("^TWII")
+    q = type("Q", (), {"code": "IX0001", "datetime": datetime.datetime(2026, 11, 13, 9, 1, 20), "close": 101.5, "amount": 900.0})()
+    api.idx_callback("TSE", q)
+    last = bars.frame().iloc[-1]
+    assert last["close"] == 101.5 and last["volume"] == 400.0           # 900 cumulative - 500 already counted

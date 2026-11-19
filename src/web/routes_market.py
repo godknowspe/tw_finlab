@@ -18,7 +18,10 @@ from src.services.config_service import ConfigService
 from src.domain import regime
 from src.domain.risk import round_trips
 from src.services.indicator_service import IndicatorService
-from src.services.intraday import IntradayService, RateLimited, resample
+import shioaji as sj
+
+from src.api.shioaji_api import ShioajiClient, ShioajiCoolingDown
+from src.services.intraday import INDEX_CODES, IntradayService, RateLimited, resample
 from src.services.market_data import INTRADAY, MarketDataService
 from src.services.quote_service import get_quotes, shioaji_api_if_enabled
 from src.web import deps
@@ -109,6 +112,30 @@ def _intraday_service(db: Session) -> IntradayService:
     return _intraday["service"]
 
 
+def _live_bars(db: Session, sym: str):
+    """The symbol's same-day bars. The Shioaji session expires overnight; when a call shows it
+    died, drop it, log in again (rate-limited) and retry once. Failures are reported as 503 with
+    the reason instead of an opaque 500."""
+    for attempt in (1, 2):
+        svc = _intraday_service(db)
+        try:
+            return svc.get(sym)
+        except RateLimited as e:
+            raise HTTPException(status_code=429, detail=f"Shioaji call budget reached ({e}); try again shortly")
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"{sym} is not a Shioaji contract")
+        except ShioajiCoolingDown as e:
+            raise HTTPException(status_code=503, detail=f"Shioaji is reconnecting ({e})")
+        except (sj.ShioajiConnectionError, sj.ShioajiTimeoutError, sj.TokenError) as e:
+            ShioajiClient().reset(_intraday["api"])
+            _intraday["service"] = _intraday["api"] = None
+            logger.warning(f"Shioaji session lost ({type(e).__name__}); attempt {attempt}")
+            if attempt == 2:
+                raise HTTPException(status_code=503, detail=f"Shioaji connection lost: {str(e)[:120]}")
+        except sj.ShioajiError as e:
+            raise HTTPException(status_code=503, detail=f"Shioaji error: {str(e)[:160]}")
+
+
 @router.get("/intraday/{stock_id}")
 def get_intraday(stock_id: str, interval: str = "1min", db: Session = Depends(deps.get_db)):
     """Same-day bars for a TW stock. Reads local memory; Shioaji is called once per symbol per
@@ -116,15 +143,9 @@ def get_intraday(stock_id: str, interval: str = "1min", db: Session = Depends(de
     if interval not in LIVE_INTERVALS:
         raise HTTPException(status_code=422, detail=f"unsupported interval {interval}")
     sym = canonical_symbol(stock_id)
-    if not is_tw(sym) or sym.startswith("^") or sym.endswith(".TWO"):
-        raise HTTPException(status_code=422, detail="Same-day charts support listed TW stocks only")
-    svc = _intraday_service(db)
-    try:
-        bars = svc.get(sym)
-    except RateLimited as e:
-        raise HTTPException(status_code=429, detail=f"Shioaji call budget reached ({e}); try again shortly")
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"{sym} is not a Shioaji stock contract")
+    if sym not in INDEX_CODES and (not is_tw(sym) or sym.startswith("^") or sym.endswith(".TWO")):
+        raise HTTPException(status_code=422, detail="Same-day charts support listed TW stocks and the TAIEX (^TWII)")
+    bars = _live_bars(db, sym)
     df = resample(bars.frame(), LIVE_INTERVALS[interval])
     if df.empty:
         return []
